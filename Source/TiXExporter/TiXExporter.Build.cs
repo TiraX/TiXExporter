@@ -24,8 +24,11 @@ public class TiXExporter : ModuleRules
 		
 		PublicDependencyModuleNames.AddRange(
 			new string[]
-			{
-				"Core",
+            {
+                "AssetRegistry",
+                "Core",
+                "UnrealEd",
+                "Json",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -38,6 +41,12 @@ public class TiXExporter : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+                "RenderCore",
+                "RawMesh",
+                "MeshUtilities",
+                "RHI",
+                "UtilityShaders",
+                "ShaderCore"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
