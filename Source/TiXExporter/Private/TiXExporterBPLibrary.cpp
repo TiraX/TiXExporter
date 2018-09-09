@@ -37,6 +37,9 @@ struct FTiXVertex
 	FVector Normal;
 	FVector TangentX;
 	FVector2D TexCoords[MAX_TIX_TEXTURE_COORDS];
+	FVector4 Color;
+	FVector4 BlendIndex;
+	FVector4 BlendWeight;
 
 	bool operator == (const FTiXVertex& Other) const
 	{
@@ -111,23 +114,30 @@ void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, 
 		TSharedRef< FJsonValueNumber > PX = MakeShareable(new FJsonValueNumber(v.Position.X));
 		TSharedRef< FJsonValueNumber > PY = MakeShareable(new FJsonValueNumber(v.Position.Y));
 		TSharedRef< FJsonValueNumber > PZ = MakeShareable(new FJsonValueNumber(v.Position.Z));
-		TSharedRef< FJsonValueNumber > NX = MakeShareable(new FJsonValueNumber(v.Normal.X));
-		TSharedRef< FJsonValueNumber > NY = MakeShareable(new FJsonValueNumber(v.Normal.Y));
-		TSharedRef< FJsonValueNumber > NZ = MakeShareable(new FJsonValueNumber(v.Normal.Z));
-		TSharedRef< FJsonValueNumber > TX = MakeShareable(new FJsonValueNumber(v.TangentX.X));
-		TSharedRef< FJsonValueNumber > TY = MakeShareable(new FJsonValueNumber(v.TangentX.Y));
-		TSharedRef< FJsonValueNumber > TZ = MakeShareable(new FJsonValueNumber(v.TangentX.Z));
-
 		OutArray.Add(PX);
 		OutArray.Add(PY);
 		OutArray.Add(PZ);
-		OutArray.Add(NX);
-		OutArray.Add(NY);
-		OutArray.Add(NZ);
-		OutArray.Add(TX);
-		OutArray.Add(TY);
-		OutArray.Add(TZ);
 
+		if ((VsFormat & EVSSEG_NORMAL) != 0)
+		{
+			TSharedRef< FJsonValueNumber > NX = MakeShareable(new FJsonValueNumber(v.Normal.X));
+			TSharedRef< FJsonValueNumber > NY = MakeShareable(new FJsonValueNumber(v.Normal.Y));
+			TSharedRef< FJsonValueNumber > NZ = MakeShareable(new FJsonValueNumber(v.Normal.Z));
+			OutArray.Add(NX);
+			OutArray.Add(NY);
+			OutArray.Add(NZ);
+		}
+		if ((VsFormat & EVSSEG_COLOR) != 0)
+		{
+			TSharedRef< FJsonValueNumber > R = MakeShareable(new FJsonValueNumber(v.Color.X));
+			TSharedRef< FJsonValueNumber > G = MakeShareable(new FJsonValueNumber(v.Color.Y));
+			TSharedRef< FJsonValueNumber > B = MakeShareable(new FJsonValueNumber(v.Color.Z));
+			TSharedRef< FJsonValueNumber > A = MakeShareable(new FJsonValueNumber(v.Color.W));
+			OutArray.Add(R);
+			OutArray.Add(G);
+			OutArray.Add(B);
+			OutArray.Add(A);
+		}
 		if ((VsFormat & EVSSEG_TEXCOORD0) != 0)
 		{
 			TSharedRef< FJsonValueNumber > JU = MakeShareable(new FJsonValueNumber(v.TexCoords[0].X));
@@ -141,6 +151,37 @@ void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, 
 			TSharedRef< FJsonValueNumber > JV = MakeShareable(new FJsonValueNumber(v.TexCoords[1].Y));
 			OutArray.Add(JU);
 			OutArray.Add(JV);
+		}
+		if ((VsFormat & EVSSEG_TANGENT) != 0)
+		{
+			TSharedRef< FJsonValueNumber > TX = MakeShareable(new FJsonValueNumber(v.TangentX.X));
+			TSharedRef< FJsonValueNumber > TY = MakeShareable(new FJsonValueNumber(v.TangentX.Y));
+			TSharedRef< FJsonValueNumber > TZ = MakeShareable(new FJsonValueNumber(v.TangentX.Z));
+			OutArray.Add(TX);
+			OutArray.Add(TY);
+			OutArray.Add(TZ);
+		}
+		if ((VsFormat & EVSSEG_BLENDINDEX) != 0)
+		{
+			TSharedRef< FJsonValueNumber > I0 = MakeShareable(new FJsonValueNumber(v.BlendIndex.X));
+			TSharedRef< FJsonValueNumber > I1 = MakeShareable(new FJsonValueNumber(v.BlendIndex.Y));
+			TSharedRef< FJsonValueNumber > I2 = MakeShareable(new FJsonValueNumber(v.BlendIndex.Z));
+			TSharedRef< FJsonValueNumber > I3 = MakeShareable(new FJsonValueNumber(v.BlendIndex.W));
+			OutArray.Add(I0);
+			OutArray.Add(I1);
+			OutArray.Add(I2);
+			OutArray.Add(I3);
+		}
+		if ((VsFormat & EVSSEG_BLENDWEIGHT) != 0)
+		{
+			TSharedRef< FJsonValueNumber > W0 = MakeShareable(new FJsonValueNumber(v.BlendWeight.X));
+			TSharedRef< FJsonValueNumber > W1 = MakeShareable(new FJsonValueNumber(v.BlendWeight.Y));
+			TSharedRef< FJsonValueNumber > W2 = MakeShareable(new FJsonValueNumber(v.BlendWeight.Z));
+			TSharedRef< FJsonValueNumber > W3 = MakeShareable(new FJsonValueNumber(v.BlendWeight.W));
+			OutArray.Add(W0);
+			OutArray.Add(W1);
+			OutArray.Add(W2);
+			OutArray.Add(W3);
 		}
 	}
 }
@@ -204,7 +245,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor)
 	}
 }
 
-void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath, float MeshVertexPositionScale)
+void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath, TArray<FString> Components, float MeshVertexPositionScale)
 {
 	UStaticMesh* StaticMesh = Actor->GetStaticMeshComponent()->GetStaticMesh();
 	FString SM_GamePath = StaticMesh->GetPathName();
@@ -280,29 +321,40 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 				++TexCoordCount;
 			}
 		}
+
+		// Get Vertex format
 		uint32 VsFormat = 0;
-		if (MeshData.VertexPositions.Num() > 0)
+		if (MeshData.VertexPositions.Num() > 0 && Components.Find(TEXT("POSITION")) != INDEX_NONE)
 		{
 			VsFormat |= EVSSEG_POSITION;
 		}
-		if (MeshData.WedgeTangentZ.Num() > 0)
+		else
+		{
+			UE_LOG(LogTiXExporter, Error, TEXT("Static mesh [%s] do not have position stream."), *StaticMesh->GetPathName());
+			return;
+		}
+		if (MeshData.WedgeTangentZ.Num() > 0 && Components.Find(TEXT("NORMAL")) != INDEX_NONE)
 		{
 			VsFormat |= EVSSEG_NORMAL;
 		}
-		if (MeshData.WedgeTangentX.Num() > 0)
+		if (MeshData.WedgeColors.Num() > 0 && Components.Find(TEXT("COLOR")) != INDEX_NONE)
 		{
-			VsFormat |= EVSSEG_TANGENT;
+			VsFormat |= EVSSEG_COLOR;
 		}
-		if (MeshData.WedgeTexCoords[0].Num() > 0)
+		if (MeshData.WedgeTexCoords[0].Num() > 0 && Components.Find(TEXT("TEXCOORD0")) != INDEX_NONE)
 		{
 			VsFormat |= EVSSEG_TEXCOORD0;
 		}
-		if (MeshData.WedgeTexCoords[1].Num() > 0)
+		if (MeshData.WedgeTexCoords[1].Num() > 0 && Components.Find(TEXT("TEXCOORD1")) != INDEX_NONE)
 		{
 			VsFormat |= EVSSEG_TEXCOORD1;
 		}
+		if (MeshData.WedgeTangentX.Num() > 0 && Components.Find(TEXT("TANGENT")) != INDEX_NONE)
+		{
+			VsFormat |= EVSSEG_TANGENT;
+		}
 
-		// Add data for each material
+		// Add data for each section
 		for (int32 face = 0; face < MeshData.FaceMaterialIndices.Num(); ++face)
 		{
 			int32 FaceMaterialIndex = MeshData.FaceMaterialIndices[face];
@@ -317,7 +369,19 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 				FTiXVertex Vertex;
 				Vertex.Position = MeshData.VertexPositions[MeshData.WedgeIndices[IndexOffset + i]] * MeshVertexPositionScale;
 				Vertex.Normal = MeshData.WedgeTangentZ[IndexOffset + i];
-				Vertex.TangentX = MeshData.WedgeTangentX[IndexOffset + i];
+				if (MeshData.WedgeColors.Num() > 0)
+				{
+					const float OneOver255 = 1.f / 255.f;
+					FColor C = MeshData.WedgeColors[IndexOffset + i];
+					Vertex.Color.X = C.R * OneOver255;
+					Vertex.Color.Y = C.G * OneOver255;
+					Vertex.Color.Z = C.B * OneOver255;
+					Vertex.Color.W = C.A * OneOver255;
+				}
+				if (MeshData.WedgeTangentX.Num() > 0)
+				{
+					Vertex.TangentX = MeshData.WedgeTangentX[IndexOffset + i];
+				}
 				for (int32 uv = 0; uv < TexCoordCount; ++uv)
 				{
 					Vertex.TexCoords[uv] = MeshData.WedgeTexCoords[uv][IndexOffset + i];
