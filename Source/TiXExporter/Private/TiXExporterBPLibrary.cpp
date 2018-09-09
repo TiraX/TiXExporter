@@ -281,6 +281,7 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 		TArray<TArray<FTiXVertex>> Vertices;
 		TArray<TArray<int32>> Indices;
 		TArray<TMap<FTiXVertex, int32>> IndexMap;
+		TArray<FStaticMaterial*> Materials;
 
 		check(MeshData.FaceMaterialIndices.Num() * 3 == MeshData.WedgeIndices.Num());
 		check(MeshData.WedgeTangentZ.Num() == MeshData.WedgeIndices.Num());
@@ -300,6 +301,7 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 				MaterialSections[FaceMaterialIndex] ++;
 			}
 		}
+		check(MaterialSections.Num() == StaticMesh->StaticMaterials.Num());
 
 		// Validate Material indices
 		for (int32 i = 0; i < MaterialSections.Num(); ++i)
@@ -311,6 +313,7 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 		Vertices.AddZeroed(MaterialSections.Num());
 		Indices.AddZeroed(MaterialSections.Num());
 		IndexMap.AddZeroed(MaterialSections.Num());
+		Materials.AddZeroed(MaterialSections.Num());
 
 		int32 TexCoordCount = 0;
 		check(MAX_TIX_TEXTURE_COORDS <= MAX_MESH_TEXTURE_COORDS);
@@ -405,6 +408,14 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 			}
 		}
 
+		// Get Material info
+		for (int32 section = 0; section < MaterialSections.Num(); ++section)
+		{
+			Materials[section] = &StaticMesh->StaticMaterials[section];
+
+			// Convert material interface (material instance or template)
+		}
+
 		// output json
 		{
 			TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
@@ -424,6 +435,8 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 			{
 				TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
 				JSection->SetNumberField(TEXT("vertex_count"), Vertices[section].Num());
+
+				JSection->SetStringField(TEXT("material"), Materials[section]->MaterialInterface->GetName());
 
 				TArray< TSharedPtr<FJsonValue> > IndicesArray, VerticesArray;
 				TArray< TSharedPtr<FJsonValue> > FormatArray;
