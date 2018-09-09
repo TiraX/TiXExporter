@@ -204,7 +204,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor)
 	}
 }
 
-void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath)
+void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath, float MeshVertexPositionScale)
 {
 	UStaticMesh* StaticMesh = Actor->GetStaticMeshComponent()->GetStaticMesh();
 	FString SM_GamePath = StaticMesh->GetPathName();
@@ -315,7 +315,7 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 			for (int32 i = 0; i < 3; ++i)
 			{
 				FTiXVertex Vertex;
-				Vertex.Position = MeshData.VertexPositions[MeshData.WedgeIndices[IndexOffset + i]];
+				Vertex.Position = MeshData.VertexPositions[MeshData.WedgeIndices[IndexOffset + i]] * MeshVertexPositionScale;
 				Vertex.Normal = MeshData.WedgeTangentZ[IndexOffset + i];
 				Vertex.TangentX = MeshData.WedgeTangentX[IndexOffset + i];
 				for (int32 uv = 0; uv < TexCoordCount; ++uv)

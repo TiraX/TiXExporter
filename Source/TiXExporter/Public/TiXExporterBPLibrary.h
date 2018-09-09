@@ -34,5 +34,5 @@ class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
 	static void ExportCurrentScene(AActor * Actor);
 
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Static Mesh", Keywords = "TiX Export Static Mesh"), Category = "TiXExporter")
-	static void ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath);
+	static void ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath, float MeshVertexPositionScale = 1.f);
 };
