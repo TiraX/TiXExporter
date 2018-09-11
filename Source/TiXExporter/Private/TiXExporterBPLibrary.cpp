@@ -12,7 +12,6 @@
 #include "Serialization/JsonSerializer.h"
 #include "HAL/PlatformFilemanager.h"
 #include "Misc/FileHelper.h"
-#include "MeshUtilities.h"
 
 DEFINE_LOG_CATEGORY(LogTiXExporter);
 
@@ -186,44 +185,6 @@ void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, 
 	}
 }
 
-void RecomputeNormals(FRawMesh& RawMesh)
-{
-	//float ComparisonThreshold = THRESH_POINTS_ARE_SAME;
-	//int32 NumWedges = RawMesh.WedgeIndices.Num();
-
-	//// Find overlapping corners to accelerate adjacency.
-	//IMeshUtilities* MeshUtilities = FModuleManager::Get().LoadModulePtr<IMeshUtilities>("MeshUtilities");
-	//FOverlappingCorners OverlappingCorners;
-	//MeshUtilities->FindOverlappingCorners(OverlappingCorners, RawMesh.VertexPositions, RawMesh.WedgeIndices, ComparisonThreshold);
-
-	//// Figure out if we should recompute normals and tangents.
-	//bool bRecomputeNormals = false;// SrcModel.BuildSettings.bRecomputeNormals || RawMesh.WedgeTangentZ.Num() != NumWedges;
-	//bool bRecomputeTangents = true;// SrcModel.BuildSettings.bRecomputeTangents || RawMesh.WedgeTangentX.Num() != NumWedges || RawMesh.WedgeTangentY.Num() != NumWedges;
-
-	//// Dump normals and tangents if we are recomputing them.
-	//if (bRecomputeTangents)
-	//{
-	//	RawMesh.WedgeTangentX.Empty(NumWedges);
-	//	RawMesh.WedgeTangentX.AddZeroed(NumWedges);
-	//	RawMesh.WedgeTangentY.Empty(NumWedges);
-	//	RawMesh.WedgeTangentY.AddZeroed(NumWedges);
-	//}
-	//if (bRecomputeNormals)
-	//{
-	//	RawMesh.WedgeTangentZ.Empty(NumWedges);
-	//	RawMesh.WedgeTangentZ.AddZeroed(NumWedges);
-	//}
-
-	//// Compute any missing tangents.
-	//{
-	//	// Static meshes always blend normals of overlapping corners.
-	//	uint32 TangentOptions = ETangentOptions::BlendOverlappingNormals | ETangentOptions::IgnoreDegenerateTriangles;
-
-	//	//MikkTSpace should be use only when the user want to recompute the normals or tangents otherwise should always fallback on builtin
-	//	ComputeTangents_MikkTSpace(RawMesh, OverlappingCorners, TangentOptions);
-	//}
-}
-
 UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
 {
@@ -245,39 +206,186 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor)
 	}
 }
 
-void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath, TArray<FString> Components, float MeshVertexPositionScale)
+TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& MaterialInstanceName, int32 VsFormat)
 {
-	UStaticMesh* StaticMesh = Actor->GetStaticMeshComponent()->GetStaticMesh();
-	FString SM_GamePath = StaticMesh->GetPathName();
-	SM_GamePath = SM_GamePath.Replace(TEXT("/Game/"), TEXT(""));
-	int32 DotIndex;
-	bool LastDot = SM_GamePath.FindLastChar('.', DotIndex);
-	if (LastDot)
-	{
-		SM_GamePath = SM_GamePath.Mid(0, DotIndex);
-	}
-	int32 SlashIndex;
-	bool LastSlash = SM_GamePath.FindLastChar('/', SlashIndex);
-	FString Path;
-	if (LastSlash)
-	{
-		Path = SM_GamePath.Mid(0, SlashIndex + 1);
-	}
-	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
-	if (ExportPath[ExportPath.Len() - 1] != '/')
-		ExportPath.AppendChar('/');
-	FString ExportFullPath = ExportPath + Path;
-	FString ExportFullPathName = ExportFullPath + StaticMesh->GetName() + TEXT(".tjs");
+	TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
+	JSection->SetNumberField(TEXT("vertex_count"), Vertices.Num());
 
-	UE_LOG(LogTiXExporter, Log, TEXT("Exporting Static Mesh: %s to %s."), *StaticMesh->GetName(), *ExportFullPath);
+	JSection->SetStringField(TEXT("material"), MaterialInstanceName);
+
+	TArray< TSharedPtr<FJsonValue> > IndicesArray, VerticesArray;
+	TArray< TSharedPtr<FJsonValue> > FormatArray;
+
+	ConvertToJsonArray(Vertices, VsFormat, VerticesArray);
+	JSection->SetArrayField(TEXT("vertices"), VerticesArray);
+
+	ConvertToJsonArray(Indices, IndicesArray);
+	JSection->SetArrayField(TEXT("indices"), IndicesArray);
+
+#define ADD_VS_FORMAT(Format) if ((VsFormat & Format) != 0) FormatArray.Add(MakeShareable(new FJsonValueString(TEXT(#Format))))
+	ADD_VS_FORMAT(EVSSEG_POSITION);
+	ADD_VS_FORMAT(EVSSEG_NORMAL);
+	ADD_VS_FORMAT(EVSSEG_COLOR);
+	ADD_VS_FORMAT(EVSSEG_TEXCOORD0);
+	ADD_VS_FORMAT(EVSSEG_TEXCOORD1);
+	ADD_VS_FORMAT(EVSSEG_TANGENT);
+	ADD_VS_FORMAT(EVSSEG_BLENDINDEX);
+	ADD_VS_FORMAT(EVSSEG_BLENDWEIGHT);
+#undef ADD_VS_FORMAT
+
+	JSection->SetArrayField(TEXT("vs_format"), FormatArray);
+
+	return JSection;
+}
+
+void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale)
+{
+	const int32 TotalLODs = StaticMesh->RenderData->LODResources.Num();
+
+	// Export LOD0 only for now.
+	int32 CurrentLOD = 0;
+	FStaticMeshLODResources& LODResource = StaticMesh->RenderData->LODResources[CurrentLOD];
+
+	const FStaticMeshVertexBuffer& StaticMeshVertexBuffer = LODResource.VertexBuffers.StaticMeshVertexBuffer;
+	const FPositionVertexBuffer& PositionVertexBuffer = LODResource.VertexBuffers.PositionVertexBuffer;
+	const FColorVertexBuffer& ColorVertexBuffer = LODResource.VertexBuffers.ColorVertexBuffer;
+	const int32 TotalNumTexCoords = LODResource.VertexBuffers.StaticMeshVertexBuffer.GetNumTexCoords();
+
+	// Get Vertex format
+	uint32 VsFormat = 0;
+	if (PositionVertexBuffer.GetNumVertices() > 0 && Components.Find(TEXT("POSITION")) != INDEX_NONE)
+	{
+		VsFormat |= EVSSEG_POSITION;
+	}
+	else
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("Static mesh [%s] do not have position stream."), *StaticMesh->GetPathName());
+		return;
+	}
+	if (StaticMeshVertexBuffer.GetNumVertices() > 0)
+	{
+		if (Components.Find(TEXT("NORMAL")) != INDEX_NONE)
+			VsFormat |= EVSSEG_NORMAL;
+		if (Components.Find(TEXT("TANGENT")) != INDEX_NONE)
+			VsFormat |= EVSSEG_TANGENT;
+	}
+	if (ColorVertexBuffer.GetNumVertices() > 0 && Components.Find(TEXT("COLOR")) != INDEX_NONE)
+	{
+		VsFormat |= EVSSEG_COLOR;
+	}
+	if (TotalNumTexCoords > 0 && Components.Find(TEXT("TEXCOORD0")) != INDEX_NONE)
+	{
+		VsFormat |= EVSSEG_TEXCOORD0;
+	}
+	if (TotalNumTexCoords > 1 && Components.Find(TEXT("TEXCOORD1")) != INDEX_NONE)
+	{
+		VsFormat |= EVSSEG_TEXCOORD1;
+	}
+
+	TArray<uint32> MeshIndices;
+	LODResource.IndexBuffer.GetCopy(MeshIndices);
+
+	TArray< TSharedPtr<FJsonValue> > JsonSections;
+	for (int32 Section = 0; Section < LODResource.Sections.Num(); ++Section)
+	{
+		FStaticMeshSection& MeshSection = LODResource.Sections[Section];
+
+		const int32 TotalFaces = MeshSection.NumTriangles;
+		const int32 MinVertexIndex = MeshSection.MinVertexIndex;
+		const int32 MaxVertexIndex = MeshSection.MaxVertexIndex;
+		const int32 FirstIndex = MeshSection.FirstIndex;
+		FString MaterialName = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface->GetName();
+		
+		// data container
+		TArray<FTiXVertex> VertexSection;
+		TArray<int32> IndexSection;
+		TMap<FTiXVertex, int32> IndexMapSection;
+
+		// go through indices
+		const int32 MaxIndex = FirstIndex + TotalFaces * 3;
+		for (int32 ii = FirstIndex; ii < MaxIndex; ++ii)
+		{
+			uint32 Index = MeshIndices[ii];
+			FTiXVertex Vertex;
+			Vertex.Position = PositionVertexBuffer.VertexPosition(Index) * MeshVertexPositionScale;
+			Vertex.Normal = StaticMeshVertexBuffer.VertexTangentZ(Index).GetSafeNormal();
+			Vertex.TangentX = StaticMeshVertexBuffer.VertexTangentX(Index).GetSafeNormal();
+			for (int32 uv = 0; uv < TotalNumTexCoords && uv < MAX_TIX_TEXTURE_COORDS; ++uv)
+			{
+				Vertex.TexCoords[uv] = StaticMeshVertexBuffer.GetVertexUV(Index, uv);
+			}
+			FColor C = ColorVertexBuffer.VertexColor(Index);
+			const float OneOver255 = 1.f / 255.f;
+			Vertex.Color.X = C.R * OneOver255;
+			Vertex.Color.Y = C.G * OneOver255;
+			Vertex.Color.Z = C.B * OneOver255;
+			Vertex.Color.W = C.A * OneOver255;
+
+			// gather vertices and indices
+			int32 * VertexIndex = IndexMapSection.Find(Vertex);
+			if (VertexIndex == nullptr)
+			{
+				// Add a new vertex to vertex buffer
+				VertexSection.Add(Vertex);
+				int32 CurrentIndex = VertexSection.Num() - 1;
+				IndexSection.Add(CurrentIndex);
+				IndexMapSection.Add(Vertex, CurrentIndex);
+			}
+			else
+			{
+				// Add an exist vertex's index
+				IndexSection.Add(*VertexIndex);
+			}
+		}
+
+		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialName, VsFormat);
+
+		TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
+		JsonSections.Add(JsonSectionValue);
+	}
+
+	// output json
+	{
+		TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+
+		// output basic info
+		JsonObject->SetStringField(TEXT("name"), StaticMesh->GetName());
+		JsonObject->SetStringField(TEXT("type"), TEXT("static_mesh"));
+		JsonObject->SetNumberField(TEXT("version"), 1);
+		JsonObject->SetStringField(TEXT("desc"), TEXT("Static mesh (Render Resource) from TiX exporter."));
+		JsonObject->SetNumberField(TEXT("vertex_count_total"), LODResource.VertexBuffers.PositionVertexBuffer.GetNumVertices());
+		JsonObject->SetNumberField(TEXT("index_count_total"), MeshIndices.Num());
+		JsonObject->SetNumberField(TEXT("texcoord_count"), TotalNumTexCoords);
+		JsonObject->SetNumberField(TEXT("total_lod"), 1);
+
+		// output mesh sections
+		JsonObject->SetArrayField(TEXT("sections"), JsonSections);
+
+		FString OutputString;
+		TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
+		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+
+		if (VerifyOrCreateDirectory(*Path))
+		{
+			FString PathName = Path + StaticMesh->GetName() + TEXT(".tjs");
+			FFileHelper::SaveStringToFile(OutputString, *PathName);
+		}
+		else
+		{
+			UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *Path);
+		}
+	}
+}
+
+void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale)
+{
 	FMeshDescription* Description = StaticMesh->GetOriginalMeshDescription(0);
 	for (const auto& Model : StaticMesh->SourceModels)
 	{
 		FRawMesh ReadMesh;
 		Model.LoadRawMesh(ReadMesh);
-		RecomputeNormals(ReadMesh);
 		const FRawMesh& MeshData = ReadMesh;
-		
+
 		TArray<TArray<FTiXVertex>> Vertices;
 		TArray<TArray<int32>> Indices;
 		TArray<TMap<FTiXVertex, int32>> IndexMap;
@@ -306,7 +414,7 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 		// Validate Material indices
 		for (int32 i = 0; i < MaterialSections.Num(); ++i)
 		{
-			checkf(MaterialSections.Find(i) != nullptr, TEXT("Invalid material face index %d for %s."), i, *SM_GamePath);
+			checkf(MaterialSections.Find(i) != nullptr, TEXT("Invalid material face index %d for %s."), i, *StaticMesh->GetPathName());
 		}
 
 		// Init array
@@ -366,7 +474,7 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 			TArray<FTiXVertex>& VertexSection = Vertices[FaceMaterialIndex];
 			TArray<int32>& IndexSection = Indices[FaceMaterialIndex];
 			TMap<FTiXVertex, int32>& IndexMapSection = IndexMap[FaceMaterialIndex];
-			
+
 			for (int32 i = 0; i < 3; ++i)
 			{
 				FTiXVertex Vertex;
@@ -424,59 +532,71 @@ void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString E
 			JsonObject->SetStringField(TEXT("name"), StaticMesh->GetName());
 			JsonObject->SetStringField(TEXT("type"), TEXT("static_mesh"));
 			JsonObject->SetNumberField(TEXT("version"), 1);
-			JsonObject->SetStringField(TEXT("desc"), TEXT("Static mesh from TiX exporter."));
+			JsonObject->SetStringField(TEXT("desc"), TEXT("Static mesh (Raw Mesh) from TiX exporter."));
 			JsonObject->SetNumberField(TEXT("vertex_count_total"), MeshData.VertexPositions.Num());
 			JsonObject->SetNumberField(TEXT("index_count_total"), MeshData.WedgeIndices.Num());
 			JsonObject->SetNumberField(TEXT("texcoord_count"), TexCoordCount);
+			JsonObject->SetNumberField(TEXT("total_lod"), 1);
 
 			// output mesh sections
 			TArray< TSharedPtr<FJsonValue> > JsonSections;
 			for (int32 section = 0; section < MaterialSections.Num(); ++section)
 			{
-				TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
-				JSection->SetNumberField(TEXT("vertex_count"), Vertices[section].Num());
-
-				JSection->SetStringField(TEXT("material"), Materials[section]->MaterialInterface->GetName());
-
-				TArray< TSharedPtr<FJsonValue> > IndicesArray, VerticesArray;
-				TArray< TSharedPtr<FJsonValue> > FormatArray;
-
-				ConvertToJsonArray(Vertices[section], VsFormat, VerticesArray);
-				JSection->SetArrayField(TEXT("vertices"), VerticesArray);
-
-				ConvertToJsonArray(Indices[section], IndicesArray);
-				JSection->SetArrayField(TEXT("indices"), IndicesArray);
-
-#define ADD_VS_FORMAT(Format) if ((VsFormat & Format) != 0) FormatArray.Add(MakeShareable(new FJsonValueString(TEXT(#Format))))
-				ADD_VS_FORMAT(EVSSEG_POSITION);
-				ADD_VS_FORMAT(EVSSEG_NORMAL);
-				ADD_VS_FORMAT(EVSSEG_COLOR);
-				ADD_VS_FORMAT(EVSSEG_TEXCOORD0);
-				ADD_VS_FORMAT(EVSSEG_TEXCOORD1);
-				ADD_VS_FORMAT(EVSSEG_TANGENT);
-				ADD_VS_FORMAT(EVSSEG_BLENDINDEX);
-				ADD_VS_FORMAT(EVSSEG_BLENDWEIGHT);
-#undef ADD_VS_FORMAT
-
-				JSection->SetArrayField(TEXT("vs_format"), FormatArray);
+				TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(Vertices[section], Indices[section], Materials[section]->MaterialInterface->GetName(), VsFormat);
 
 				TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
 				JsonSections.Add(JsonSectionValue);
 			}
 			JsonObject->SetArrayField(TEXT("sections"), JsonSections);
-			
+
 			FString OutputString;
 			TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
 			FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
-			
-			if (VerifyOrCreateDirectory(ExportFullPath))
+
+			if (VerifyOrCreateDirectory(*Path))
 			{
-				FFileHelper::SaveStringToFile(OutputString, *ExportFullPathName);
+				FString PathName = Path + StaticMesh->GetName() + TEXT(".tjs");
+				FFileHelper::SaveStringToFile(OutputString, *PathName);
 			}
 			else
 			{
-				UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportFullPath);
+				UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *Path);
 			}
 		}
+	}
+}
+
+void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath, TArray<FString> Components, float MeshVertexPositionScale)
+{
+	UStaticMesh* StaticMesh = Actor->GetStaticMeshComponent()->GetStaticMesh();
+	FString SM_GamePath = StaticMesh->GetPathName();
+	SM_GamePath = SM_GamePath.Replace(TEXT("/Game/"), TEXT(""));
+	int32 DotIndex;
+	bool LastDot = SM_GamePath.FindLastChar('.', DotIndex);
+	if (LastDot)
+	{
+		SM_GamePath = SM_GamePath.Mid(0, DotIndex);
+	}
+	int32 SlashIndex;
+	bool LastSlash = SM_GamePath.FindLastChar('/', SlashIndex);
+	FString Path;
+	if (LastSlash)
+	{
+		Path = SM_GamePath.Mid(0, SlashIndex + 1);
+	}
+	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (ExportPath[ExportPath.Len() - 1] != '/')
+		ExportPath.AppendChar('/');
+	FString ExportFullPath = ExportPath + Path;
+
+	if (StaticMesh->bAllowCPUAccess)
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT("Exporting Static Mesh: %s to %s."), *StaticMesh->GetName(), *ExportFullPath);
+		ExportStaticMeshFromRenderData(StaticMesh, ExportFullPath, Components, MeshVertexPositionScale);
+	}
+	else
+	{
+		UE_LOG(LogTiXExporter, Warning, TEXT("Exporting Static Mesh: %s to %s. Mesh do not have CPU Access, export from RawMesh"), *StaticMesh->GetName(), *ExportFullPath);
+		ExportStaticMeshFromRawMesh(StaticMesh, ExportFullPath, Components, MeshVertexPositionScale);
 	}
 }
