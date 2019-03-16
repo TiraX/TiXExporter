@@ -31,7 +31,7 @@ class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
 	GENERATED_UCLASS_BODY()
 
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Current Scene", Keywords = "TiX Export Current Scene"), Category = "TiXExporter")
-	static void ExportCurrentScene(AActor * Actor);
+	static void ExportCurrentScene(AActor * Actor, const FString& ExportPath);
 
 	/** Export static mesh. 
 		Param: Components should be combine of one or more in "POSITION, NORMAL, COLOR, TEXCOORD0, TEXCOORD1, TANGENT, BLENDINDEX, BLENDWEIGHT".

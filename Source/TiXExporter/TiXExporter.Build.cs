@@ -11,7 +11,7 @@ public class TiXExporter : ModuleRules
 		PublicIncludePaths.AddRange(
 			new string[] {
 				// ... add public include paths required here ...
-			}
+            }
 			);
 				
 		
@@ -29,6 +29,8 @@ public class TiXExporter : ModuleRules
                 "Core",
                 "UnrealEd",
                 "Json",
+                "Foliage",
+                "Landscape"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);

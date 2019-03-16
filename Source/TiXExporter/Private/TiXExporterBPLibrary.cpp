@@ -5,6 +5,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/Classes/Animation/SkeletalMeshActor.h"
+#include "InstancedFoliageActor.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Runtime/Landscape/Classes/Landscape.h"
 #include "RawMesh.h"
 #include "Dom/JsonValue.h"
 #include "Dom/JsonObject.h"
@@ -46,6 +51,13 @@ struct FTiXVertex
 	}
 };
 
+struct FTiXInstance
+{
+	FVector Position;
+	FQuat Rotation;
+	FVector Scale;
+};
+
 /**
 * Creates a hash value from a FTiXVertex.
 */
@@ -74,6 +86,52 @@ static bool VerifyOrCreateDirectory(const FString& TargetDir)
 	return true; 
 }
 
+void ConvertToJsonArray(const FVector2D& VectorValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(VectorValue.X));
+	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(VectorValue.Y));
+
+	OutArray.Add(JsonValueX);
+	OutArray.Add(JsonValueY);
+}
+
+void ConvertToJsonArray(const FVector& VectorValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(VectorValue.X));
+	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(VectorValue.Y));
+	TSharedRef< FJsonValueNumber > JsonValueZ = MakeShareable(new FJsonValueNumber(VectorValue.Z));
+
+	OutArray.Add(JsonValueX);
+	OutArray.Add(JsonValueY);
+	OutArray.Add(JsonValueZ);
+}
+
+void ConvertToJsonArray(const FQuat& QuatValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(QuatValue.X));
+	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(QuatValue.Y));
+	TSharedRef< FJsonValueNumber > JsonValueZ = MakeShareable(new FJsonValueNumber(QuatValue.Z));
+	TSharedRef< FJsonValueNumber > JsonValueW = MakeShareable(new FJsonValueNumber(QuatValue.W));
+
+	OutArray.Add(JsonValueX);
+	OutArray.Add(JsonValueY);
+	OutArray.Add(JsonValueZ);
+	OutArray.Add(JsonValueW);
+}
+
+void ConvertToJsonArray(const FVector4& Vector4Value, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(Vector4Value.X));
+	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(Vector4Value.Y));
+	TSharedRef< FJsonValueNumber > JsonValueZ = MakeShareable(new FJsonValueNumber(Vector4Value.Z));
+	TSharedRef< FJsonValueNumber > JsonValueW = MakeShareable(new FJsonValueNumber(Vector4Value.W));
+
+	OutArray.Add(JsonValueX);
+	OutArray.Add(JsonValueY);
+	OutArray.Add(JsonValueZ);
+	OutArray.Add(JsonValueW);
+}
+
 void ConvertToJsonArray(const TArray<int32>& IntArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	for (const auto& v : IntArray)
@@ -86,101 +144,49 @@ void ConvertToJsonArray(const TArray<FVector>& VectorArray, TArray< TSharedPtr<F
 {
 	for (const auto& v : VectorArray)
 	{
-		TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(v.X));
-		TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(v.Y));
-		TSharedRef< FJsonValueNumber > JsonValueZ = MakeShareable(new FJsonValueNumber(v.Z));
-
-		OutArray.Add(JsonValueX);
-		OutArray.Add(JsonValueY);
-		OutArray.Add(JsonValueZ);
+		ConvertToJsonArray(v, OutArray);
 	}
 }
 void ConvertToJsonArray(const TArray<FVector2D>& VectorArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	for (const auto& v : VectorArray)
 	{
-		TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(v.X));
-		TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(v.Y));
-
-		OutArray.Add(JsonValueX);
-		OutArray.Add(JsonValueY);
+		ConvertToJsonArray(v, OutArray);
 	}
 }
 void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	for (const auto& v : VertexArray)
 	{
-		TSharedRef< FJsonValueNumber > PX = MakeShareable(new FJsonValueNumber(v.Position.X));
-		TSharedRef< FJsonValueNumber > PY = MakeShareable(new FJsonValueNumber(v.Position.Y));
-		TSharedRef< FJsonValueNumber > PZ = MakeShareable(new FJsonValueNumber(v.Position.Z));
-		OutArray.Add(PX);
-		OutArray.Add(PY);
-		OutArray.Add(PZ);
+		ConvertToJsonArray(v.Position, OutArray);
 
 		if ((VsFormat & EVSSEG_NORMAL) != 0)
 		{
-			TSharedRef< FJsonValueNumber > NX = MakeShareable(new FJsonValueNumber(v.Normal.X));
-			TSharedRef< FJsonValueNumber > NY = MakeShareable(new FJsonValueNumber(v.Normal.Y));
-			TSharedRef< FJsonValueNumber > NZ = MakeShareable(new FJsonValueNumber(v.Normal.Z));
-			OutArray.Add(NX);
-			OutArray.Add(NY);
-			OutArray.Add(NZ);
+			ConvertToJsonArray(v.Normal, OutArray);
 		}
 		if ((VsFormat & EVSSEG_COLOR) != 0)
 		{
-			TSharedRef< FJsonValueNumber > R = MakeShareable(new FJsonValueNumber(v.Color.X));
-			TSharedRef< FJsonValueNumber > G = MakeShareable(new FJsonValueNumber(v.Color.Y));
-			TSharedRef< FJsonValueNumber > B = MakeShareable(new FJsonValueNumber(v.Color.Z));
-			TSharedRef< FJsonValueNumber > A = MakeShareable(new FJsonValueNumber(v.Color.W));
-			OutArray.Add(R);
-			OutArray.Add(G);
-			OutArray.Add(B);
-			OutArray.Add(A);
+			ConvertToJsonArray(v.Color, OutArray);
 		}
 		if ((VsFormat & EVSSEG_TEXCOORD0) != 0)
 		{
-			TSharedRef< FJsonValueNumber > JU = MakeShareable(new FJsonValueNumber(v.TexCoords[0].X));
-			TSharedRef< FJsonValueNumber > JV = MakeShareable(new FJsonValueNumber(v.TexCoords[0].Y));
-			OutArray.Add(JU);
-			OutArray.Add(JV);
+			ConvertToJsonArray(v.TexCoords[0], OutArray);
 		}
 		if ((VsFormat & EVSSEG_TEXCOORD1) != 0)
 		{
-			TSharedRef< FJsonValueNumber > JU = MakeShareable(new FJsonValueNumber(v.TexCoords[1].X));
-			TSharedRef< FJsonValueNumber > JV = MakeShareable(new FJsonValueNumber(v.TexCoords[1].Y));
-			OutArray.Add(JU);
-			OutArray.Add(JV);
+			ConvertToJsonArray(v.TexCoords[1], OutArray);
 		}
 		if ((VsFormat & EVSSEG_TANGENT) != 0)
 		{
-			TSharedRef< FJsonValueNumber > TX = MakeShareable(new FJsonValueNumber(v.TangentX.X));
-			TSharedRef< FJsonValueNumber > TY = MakeShareable(new FJsonValueNumber(v.TangentX.Y));
-			TSharedRef< FJsonValueNumber > TZ = MakeShareable(new FJsonValueNumber(v.TangentX.Z));
-			OutArray.Add(TX);
-			OutArray.Add(TY);
-			OutArray.Add(TZ);
+			ConvertToJsonArray(v.TangentX, OutArray);
 		}
 		if ((VsFormat & EVSSEG_BLENDINDEX) != 0)
 		{
-			TSharedRef< FJsonValueNumber > I0 = MakeShareable(new FJsonValueNumber(v.BlendIndex.X));
-			TSharedRef< FJsonValueNumber > I1 = MakeShareable(new FJsonValueNumber(v.BlendIndex.Y));
-			TSharedRef< FJsonValueNumber > I2 = MakeShareable(new FJsonValueNumber(v.BlendIndex.Z));
-			TSharedRef< FJsonValueNumber > I3 = MakeShareable(new FJsonValueNumber(v.BlendIndex.W));
-			OutArray.Add(I0);
-			OutArray.Add(I1);
-			OutArray.Add(I2);
-			OutArray.Add(I3);
+			ConvertToJsonArray(v.BlendIndex, OutArray);
 		}
 		if ((VsFormat & EVSSEG_BLENDWEIGHT) != 0)
 		{
-			TSharedRef< FJsonValueNumber > W0 = MakeShareable(new FJsonValueNumber(v.BlendWeight.X));
-			TSharedRef< FJsonValueNumber > W1 = MakeShareable(new FJsonValueNumber(v.BlendWeight.Y));
-			TSharedRef< FJsonValueNumber > W2 = MakeShareable(new FJsonValueNumber(v.BlendWeight.Z));
-			TSharedRef< FJsonValueNumber > W3 = MakeShareable(new FJsonValueNumber(v.BlendWeight.W));
-			OutArray.Add(W0);
-			OutArray.Add(W1);
-			OutArray.Add(W2);
-			OutArray.Add(W3);
+			ConvertToJsonArray(v.BlendWeight, OutArray);
 		}
 	}
 }
@@ -191,18 +197,151 @@ UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectIni
 
 }
 
-void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor)
+void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& ExportPath)
 {
 	UWorld * CurrentWorld = Actor->GetWorld();
 	ULevel * CurrentLevel = CurrentWorld->GetCurrentLevel();
-	TArray<AActor*> Actors;
-	UGameplayStatics::GetAllActorsOfClass(Actor, AStaticMeshActor::StaticClass(), Actors);
 
+	TMap<UStaticMesh *, TArray<FTiXInstance> > ActorInstances;
+
+	TArray<AActor*> Actors;
 	UE_LOG(LogTiXExporter, Log, TEXT("Export tix scene ..."));
+
+	UE_LOG(LogTiXExporter, Log, TEXT("  Static meshes..."));
+	UGameplayStatics::GetAllActorsOfClass(Actor, AStaticMeshActor::StaticClass(), Actors);
+	int32 a = 0;
 	for (auto A : Actors)
 	{
-		static int32 a = 0;
 		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+		AStaticMeshActor * SMActor = static_cast<AStaticMeshActor*>(A);
+		UStaticMesh * StaticMesh = SMActor->GetStaticMeshComponent()->GetStaticMesh();
+
+		TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
+		FTiXInstance InstanceInfo;
+		InstanceInfo.Position = SMActor->GetTransform().GetLocation();
+		InstanceInfo.Rotation = SMActor->GetTransform().GetRotation();
+		InstanceInfo.Scale = SMActor->GetTransform().GetScale3D();
+		Instances.Add(InstanceInfo);
+	}
+
+	UE_LOG(LogTiXExporter, Log, TEXT(" Skeletal meshes..."));
+	Actors.Empty();
+	UGameplayStatics::GetAllActorsOfClass(Actor, ASkeletalMeshActor::StaticClass(), Actors);
+	for (auto A : Actors)
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+	}
+
+	UE_LOG(LogTiXExporter, Log, TEXT(" Foliage and grass..."));
+	Actors.Empty();
+	UGameplayStatics::GetAllActorsOfClass(Actor, AInstancedFoliageActor::StaticClass(), Actors);
+	for (auto A : Actors)
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+		AInstancedFoliageActor * FoliageActor = (AInstancedFoliageActor*)A;
+		for (const auto& MeshPair : FoliageActor->FoliageMeshes)
+		{
+			const FFoliageMeshInfo& MeshInfo = *MeshPair.Value;
+
+			UHierarchicalInstancedStaticMeshComponent* MeshComponent = MeshInfo.Component;
+			TArray<FInstancedStaticMeshInstanceData> MeshDataArray = MeshComponent->PerInstanceSMData;
+
+			UStaticMesh * StaticMesh = MeshComponent->GetStaticMesh();
+			TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
+
+			for (auto& MeshMatrix : MeshDataArray)
+			{
+				FTransform MeshTransform = FTransform(MeshMatrix.Transform);
+				FTiXInstance InstanceInfo;
+				InstanceInfo.Position = MeshTransform.GetLocation();
+				InstanceInfo.Rotation = MeshTransform.GetRotation();
+				InstanceInfo.Scale = MeshTransform.GetScale3D();
+				Instances.Add(InstanceInfo);
+			}
+		}
+	}
+
+	UE_LOG(LogTiXExporter, Log, TEXT(" Landscapes..."));
+	Actors.Empty();
+	UGameplayStatics::GetAllActorsOfClass(Actor, ALandscape::StaticClass(), Actors);
+	for (auto A : Actors)
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+	}
+
+	UE_LOG(LogTiXExporter, Log, TEXT("Scene structure: "));
+	int32 NumInstances = 0;
+	for (const auto& MeshPair : ActorInstances)
+	{
+		const UStaticMesh * Mesh = MeshPair.Key;
+		FString MeshName = Mesh->GetName();
+		const TArray<FTiXInstance>& Instances = MeshPair.Value;
+
+		UE_LOG(LogTiXExporter, Log, TEXT("  %s : %d instances."), *MeshName, Instances.Num());
+		NumInstances += Instances.Num();
+	}
+
+	// output json
+	{
+		TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+
+		// output basic info
+		JsonObject->SetStringField(TEXT("name"), CurrentWorld->GetName());
+		JsonObject->SetStringField(TEXT("type"), TEXT("scene"));
+		JsonObject->SetNumberField(TEXT("version"), 1);
+		JsonObject->SetStringField(TEXT("desc"), TEXT("Scene information from TiX exporter."));
+		JsonObject->SetNumberField(TEXT("mesh_total"), ActorInstances.Num());
+		JsonObject->SetNumberField(TEXT("instances_total"), NumInstances);
+		JsonObject->SetStringField(TEXT("texture_total"), TEXT("Unknown Yet"));
+
+		// output meshes and instances
+		TArray< TSharedPtr<FJsonValue> > JsonMeshes;
+		for (const auto& MeshPair : ActorInstances)
+		{
+			const UStaticMesh * Mesh = MeshPair.Key;
+			FString MeshName = Mesh->GetName();
+			const TArray<FTiXInstance>& Instances = MeshPair.Value;
+
+			// Mesh
+			TSharedPtr<FJsonObject> JMesh = MakeShareable(new FJsonObject);
+			JMesh->SetStringField(TEXT("name"), MeshName);
+
+			TArray< TSharedPtr<FJsonValue> > JMeshInstances;
+			for (const auto& Instance : Instances)
+			{
+				// Instance
+				TSharedPtr<FJsonObject> JInstance = MakeShareable(new FJsonObject);
+				TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
+				ConvertToJsonArray(Instance.Position, JPosition);
+				ConvertToJsonArray(Instance.Rotation, JRotation);
+				ConvertToJsonArray(Instance.Scale, JScale);
+				JInstance->SetArrayField(TEXT("position"), JPosition);
+				JInstance->SetArrayField(TEXT("rotation"), JRotation);
+				JInstance->SetArrayField(TEXT("scale"), JScale);
+
+				TSharedRef< FJsonValueObject > JsonInstance = MakeShareable(new FJsonValueObject(JInstance));
+				JMeshInstances.Add(JsonInstance);
+			}
+			JMesh->SetNumberField(TEXT("count"), Instances.Num());
+			JMesh->SetArrayField(TEXT("instances"), JMeshInstances);
+			TSharedRef< FJsonValueObject > JsonMesh = MakeShareable(new FJsonValueObject(JMesh));
+			JsonMeshes.Add(JsonMesh);
+		}
+		JsonObject->SetArrayField(TEXT("scene"), JsonMeshes);
+
+		FString OutputString;
+		TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
+		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+
+		if (VerifyOrCreateDirectory(*ExportPath))
+		{
+			FString PathName = ExportPath + CurrentWorld->GetName() + TEXT(".tjs");
+			FFileHelper::SaveStringToFile(OutputString, *PathName);
+		}
+		else
+		{
+			UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportPath);
+		}
 	}
 }
 
