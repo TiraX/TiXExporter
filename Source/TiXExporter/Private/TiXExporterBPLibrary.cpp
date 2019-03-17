@@ -10,6 +10,8 @@
 #include "InstancedFoliageActor.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Runtime/Landscape/Classes/Landscape.h"
+#include "Runtime/Landscape/Classes/LandscapeComponent.h"
+#include "Runtime/Landscape/Classes/LandscapeInfo.h"
 #include "RawMesh.h"
 #include "Dom/JsonValue.h"
 #include "Dom/JsonObject.h"
@@ -67,11 +69,14 @@ uint32 GetTypeHash(const FTiXVertex& Vertex)
 	return FCrc::MemCrc_DEPRECATED(&Vertex, sizeof(Vertex));
 }
 
-static bool VerifyOrCreateDirectory(const FString& TargetDir)
+static bool VerifyOrCreateDirectory(FString& TargetDir)
 {
-	// Every function call, unless the function is inline, adds a small 
-	// overhead which we can avoid by creating a local variable like so. 
-	// But beware of making every function inline! 
+	TargetDir.Replace(TEXT("\\"), TEXT("/"));
+	if (!TargetDir.EndsWith(TEXT("/")))
+	{
+		TargetDir += TEXT("/");
+	}
+
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 
 	// Directory Exists? 
@@ -191,6 +196,113 @@ void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, 
 	}
 }
 
+void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, const FString& Path)
+{
+	FString OutputString;
+	TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
+	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+
+	FString ExportPathStr = Path;
+	if (VerifyOrCreateDirectory(ExportPathStr))
+	{
+		FString PathName = ExportPathStr + Name + TEXT(".tjs");
+		FFileHelper::SaveStringToFile(OutputString, *PathName);
+	}
+	else
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportPathStr);
+	}
+}
+
+void SaveLandscapeToJson(ALandscape * LandscapeActor, const FString& LandscapeName, const FString& ExportPath)
+{
+	ULandscapeInfo * LandscapeInfo = LandscapeActor->GetLandscapeInfo();
+
+	// output basic info
+	{
+		TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+		JsonObject->SetStringField(TEXT("name"), LandscapeName);
+		JsonObject->SetStringField(TEXT("type"), TEXT("landscape"));
+		JsonObject->SetNumberField(TEXT("version"), 1);
+		JsonObject->SetStringField(TEXT("desc"), TEXT("Landscape sections from TiX exporter."));
+		JsonObject->SetNumberField(TEXT("section_total"), LandscapeInfo->XYtoComponentMap.Num());
+
+		// output meshes and instances
+		TArray< TSharedPtr<FJsonValue> > JsonLandscapeSections;
+		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
+		{
+			TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
+
+			// Position
+			const FIntPoint& Position = CompPair.Key;
+			TArray< TSharedPtr<FJsonValue> > JPoint;
+			ConvertToJsonArray(Position, JPoint);
+			JSection->SetArrayField(TEXT("point"), JPoint);
+
+			// Set section path
+			//FString SectionPath = ExportPath;
+			//VerifyOrCreateDirectory(SectionPath);
+			FString SectionPath = LandscapeName + "_sections/";
+			FString SectionName = FString::Printf(TEXT("%ssection_%d_%d"), *SectionPath, Position.X, Position.Y);
+
+			JSection->SetStringField(TEXT("section_name"), SectionName);
+
+			TSharedRef< FJsonValueObject > JsonSection = MakeShareable(new FJsonValueObject(JSection));
+			JsonLandscapeSections.Add(JsonSection);
+		}
+		JsonObject->SetArrayField(TEXT("sections"), JsonLandscapeSections);
+
+		SaveJsonToFile(JsonObject, LandscapeName, ExportPath);
+	}
+
+	// Save sections
+	{
+		// output meshes and instances
+		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
+		{
+			const FIntPoint& Position = CompPair.Key;
+			FString SectionName = FString::Printf(TEXT("section_%d_%d"), Position.X, Position.Y);
+
+			TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+			JsonObject->SetStringField(TEXT("name"), SectionName);
+			JsonObject->SetStringField(TEXT("type"), TEXT("landscape_section"));
+			JsonObject->SetNumberField(TEXT("version"), 1);
+			JsonObject->SetStringField(TEXT("desc"), TEXT("Landscape heightmap from TiX exporter."));
+			JsonObject->SetNumberField(TEXT("section_x"), Position.X);
+			JsonObject->SetNumberField(TEXT("section_y"), Position.Y);
+
+			// Set section path
+			FString SectionPath = ExportPath;
+			VerifyOrCreateDirectory(SectionPath);
+			SectionPath += LandscapeName + "_sections/";
+
+			// Heightmap
+			const ULandscapeComponent * LandscapeComponent = CompPair.Value;
+			UTexture2D * HeightmapTexture = LandscapeComponent->HeightmapTexture;
+			FColor * HeightmapData = (FColor*)HeightmapTexture->Source.LockMip(0);
+			const int32 W = HeightmapTexture->GetSizeX();
+			const int32 H = HeightmapTexture->GetSizeY();
+
+			TArray< TSharedPtr<FJsonValue> > JHeightmap;
+			JHeightmap.Reserve(W * H);
+			for (int32 y = 0; y < H; ++y)
+			{
+				for (int32 x = 0; x < W; ++x)
+				{
+					const FColor& C = HeightmapData[y * W + x];
+					uint32 Height = (C.R << 8) | C.G;
+					TSharedRef< FJsonValueNumber > JHeightValue = MakeShareable(new FJsonValueNumber(Height));
+					JHeightmap.Add(JHeightValue);
+				}
+			}
+			JsonObject->SetArrayField(TEXT("heightmap"), JHeightmap);
+			HeightmapTexture->Source.UnlockMip(0);
+
+			SaveJsonToFile(JsonObject, SectionName, SectionPath);
+		}
+	}
+}
+
 UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
 {
@@ -262,11 +374,23 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 	}
 
 	UE_LOG(LogTiXExporter, Log, TEXT(" Landscapes..."));
-	Actors.Empty();
-	UGameplayStatics::GetAllActorsOfClass(Actor, ALandscape::StaticClass(), Actors);
-	for (auto A : Actors)
+	TArray<AActor*> LandscapeActors;
+	UGameplayStatics::GetAllActorsOfClass(Actor, ALandscape::StaticClass(), LandscapeActors);
+	for (auto A : LandscapeActors)
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+		ALandscape * Landscape = static_cast<ALandscape *>(A); 
+		ULandscapeInfo * LandscapeInfo = Landscape->GetLandscapeInfo();
+
+		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
+		{
+			const FIntPoint& Position = CompPair.Key;
+			const ULandscapeComponent * LandscapeComponent = CompPair.Value;
+			UTexture2D * HeightmapTexture = LandscapeComponent->HeightmapTexture;
+			FColor * HeightmapData = (FColor*)HeightmapTexture->Source.LockMip(0);
+
+			HeightmapTexture->Source.UnlockMip(0);
+		}
 	}
 
 	UE_LOG(LogTiXExporter, Log, TEXT("Scene structure: "));
@@ -329,18 +453,44 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 		}
 		JsonObject->SetArrayField(TEXT("scene"), JsonMeshes);
 
-		FString OutputString;
-		TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
-		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+		// output landscapes
+		if (LandscapeActors.Num() > 0)
+		{
+			TArray< TSharedPtr<FJsonValue> > JsonLandscapes;
+			for (auto A : LandscapeActors)
+			{
+				ALandscape * LandscapeActor = static_cast<ALandscape *>(A);
+				TSharedPtr<FJsonObject> JLandscape = MakeShareable(new FJsonObject);
+				FString LandscapeName = CurrentWorld->GetName() + TEXT("-") + LandscapeActor->GetName();
+				JLandscape->SetStringField(TEXT("name"), LandscapeName);
 
-		if (VerifyOrCreateDirectory(*ExportPath))
-		{
-			FString PathName = ExportPath + CurrentWorld->GetName() + TEXT(".tjs");
-			FFileHelper::SaveStringToFile(OutputString, *PathName);
+				TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
+				ConvertToJsonArray(LandscapeActor->GetTransform().GetLocation(), JPosition);
+				ConvertToJsonArray(LandscapeActor->GetTransform().GetRotation(), JRotation);
+				ConvertToJsonArray(LandscapeActor->GetTransform().GetScale3D(), JScale);
+				JLandscape->SetArrayField(TEXT("position"), JPosition);
+				JLandscape->SetArrayField(TEXT("rotation"), JRotation);
+				JLandscape->SetArrayField(TEXT("scale"), JScale);
+
+				TSharedRef< FJsonValueObject > JsonLandscape = MakeShareable(new FJsonValueObject(JLandscape));
+				JsonLandscapes.Add(JsonLandscape);
+			}
+			JsonObject->SetArrayField(TEXT("landscape"), JsonLandscapes);
 		}
-		else
+
+		SaveJsonToFile(JsonObject, CurrentWorld->GetName(), ExportPath);
+	}
+	ActorInstances.Empty();
+
+	// Output landscape to Json file.
+	if (LandscapeActors.Num() > 0)
+	{
+		for (auto A : LandscapeActors)
 		{
-			UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportPath);
+			ALandscape * LandscapeActor = static_cast<ALandscape *>(A);
+			FString LandscapeName = CurrentWorld->GetName() + TEXT("-") + LandscapeActor->GetName();
+
+			SaveLandscapeToJson(LandscapeActor, LandscapeName, ExportPath);
 		}
 	}
 }
@@ -500,19 +650,7 @@ void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path
 		// output mesh sections
 		JsonObject->SetArrayField(TEXT("sections"), JsonSections);
 
-		FString OutputString;
-		TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
-		FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
-
-		if (VerifyOrCreateDirectory(*Path))
-		{
-			FString PathName = Path + StaticMesh->GetName() + TEXT(".tjs");
-			FFileHelper::SaveStringToFile(OutputString, *PathName);
-		}
-		else
-		{
-			UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *Path);
-		}
+		SaveJsonToFile(JsonObject, StaticMesh->GetName(), Path);
 	}
 }
 
@@ -688,19 +826,7 @@ void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, c
 			}
 			JsonObject->SetArrayField(TEXT("sections"), JsonSections);
 
-			FString OutputString;
-			TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
-			FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
-
-			if (VerifyOrCreateDirectory(*Path))
-			{
-				FString PathName = Path + StaticMesh->GetName() + TEXT(".tjs");
-				FFileHelper::SaveStringToFile(OutputString, *PathName);
-			}
-			else
-			{
-				UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *Path);
-			}
+			SaveJsonToFile(JsonObject, StaticMesh->GetName(), Path);
 		}
 	}
 }
