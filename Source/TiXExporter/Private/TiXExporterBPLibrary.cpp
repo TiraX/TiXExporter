@@ -12,6 +12,8 @@
 #include "Runtime/Landscape/Classes/Landscape.h"
 #include "Runtime/Landscape/Classes/LandscapeComponent.h"
 #include "Runtime/Landscape/Classes/LandscapeInfo.h"
+#include "Runtime/Engine/Classes/Engine/DirectionalLight.h"
+#include "Runtime/Engine/Classes/Components/LightComponent.h"
 #include "RawMesh.h"
 #include "Dom/JsonValue.h"
 #include "Dom/JsonObject.h"
@@ -359,27 +361,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 			}
 		}
 	}
-
-	UE_LOG(LogTiXExporter, Log, TEXT(" Landscapes..."));
-	TArray<AActor*> LandscapeActors;
-	UGameplayStatics::GetAllActorsOfClass(Actor, ALandscape::StaticClass(), LandscapeActors);
-	for (auto A : LandscapeActors)
-	{
-		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
-		ALandscape * Landscape = static_cast<ALandscape *>(A); 
-		ULandscapeInfo * LandscapeInfo = Landscape->GetLandscapeInfo();
-
-		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
-		{
-			const FIntPoint& Position = CompPair.Key;
-			const ULandscapeComponent * LandscapeComponent = CompPair.Value;
-			UTexture2D * HeightmapTexture = LandscapeComponent->HeightmapTexture;
-			FColor * HeightmapData = (FColor*)HeightmapTexture->Source.LockMip(0);
-
-			HeightmapTexture->Source.UnlockMip(0);
-		}
-	}
-
+	
 	UE_LOG(LogTiXExporter, Log, TEXT("Scene structure: "));
 	int32 NumInstances = 0;
 	for (const auto& MeshPair : ActorInstances)
@@ -440,7 +422,37 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 		}
 		JsonObject->SetArrayField(TEXT("scene"), JsonMeshes);
 
+		// output env
+		TSharedPtr<FJsonObject> JEnvironment = MakeShareable(new FJsonObject);
+		TArray<AActor*> SunLights;
+		UGameplayStatics::GetAllActorsOfClass(Actor, ADirectionalLight::StaticClass(), SunLights);
+		if (SunLights.Num() > 0)
+		{
+			//for (auto A : SunLights)
+			// Only export 1 sun light
+			TSharedPtr<FJsonObject> JSunLight = MakeShareable(new FJsonObject);
+			auto A = SunLights[0];
+			{
+				ADirectionalLight * SunLight = static_cast<ADirectionalLight *>(A);
+				ULightComponent * LightComponent = SunLight->GetLightComponent();
+
+				JSunLight->SetStringField(TEXT("name"), SunLight->GetName());
+
+				TArray< TSharedPtr<FJsonValue> > JDirection, JColor;
+				ConvertToJsonArray(LightComponent->GetDirection(), JDirection);
+				ConvertToJsonArray(LightComponent->GetLightColor(), JColor);
+				JSunLight->SetArrayField(TEXT("direction"), JDirection);
+				JSunLight->SetArrayField(TEXT("color"), JColor);
+				JSunLight->SetNumberField(TEXT("intensity"), LightComponent->Intensity);
+			}
+			JEnvironment->SetObjectField(TEXT("sun_light"), JSunLight);
+		}
+		JsonObject->SetObjectField(TEXT("environment"), JEnvironment);
+
 		// output landscapes
+		UE_LOG(LogTiXExporter, Log, TEXT(" Landscapes..."));
+		TArray<AActor*> LandscapeActors;
+		UGameplayStatics::GetAllActorsOfClass(Actor, ALandscape::StaticClass(), LandscapeActors);
 		if (LandscapeActors.Num() > 0)
 		{
 			TArray< TSharedPtr<FJsonValue> > JsonLandscapes;
@@ -488,6 +500,9 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 
 				TSharedRef< FJsonValueObject > JsonLandscape = MakeShareable(new FJsonValueObject(JLandscape));
 				JsonLandscapes.Add(JsonLandscape);
+
+
+				SaveLandscapeToJson(LandscapeActor, LandscapeName, ExportPath);
 			}
 			JsonObject->SetArrayField(TEXT("landscape"), JsonLandscapes);
 		}
@@ -495,18 +510,6 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 		SaveJsonToFile(JsonObject, CurrentWorld->GetName(), ExportPath);
 	}
 	ActorInstances.Empty();
-
-	// Output landscape sections to png
-	if (LandscapeActors.Num() > 0)
-	{
-		for (auto A : LandscapeActors)
-		{
-			ALandscape * LandscapeActor = static_cast<ALandscape *>(A);
-			FString LandscapeName = CurrentWorld->GetName() + TEXT("-") + LandscapeActor->GetName();
-
-			SaveLandscapeToJson(LandscapeActor, LandscapeName, ExportPath);
-		}
-	}
 }
 
 TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& MaterialInstanceName, int32 VsFormat)
