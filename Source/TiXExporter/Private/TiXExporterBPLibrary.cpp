@@ -19,6 +19,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "HAL/PlatformFilemanager.h"
 #include "Misc/FileHelper.h"
+#include "Serialization/BufferArchive.h"
+#include "ImageUtils.h"
 
 DEFINE_LOG_CATEGORY(LogTiXExporter);
 
@@ -214,62 +216,65 @@ void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, con
 	}
 }
 
+void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FString& Path)
+{
+	FString ExportPathStr = Path;
+	FString ExportName;
+	if (!VerifyOrCreateDirectory(ExportPathStr))
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportPathStr);
+		return;
+	}
+
+	FString TotalFileName = FPaths::Combine(*ExportPathStr, *FileName);
+	FText PathError;
+	FPaths::ValidatePath(TotalFileName, &PathError);
+
+	if (Texture && !FileName.IsEmpty() && PathError.IsEmpty())
+	{
+		FArchive* Ar = IFileManager::Get().CreateFileWriter(*TotalFileName);
+
+		if (Ar)
+		{
+			FBufferArchive Buffer;
+			bool bSuccess = FImageUtils::ExportTexture2DAsHDR(Texture, Buffer);
+
+			if (bSuccess)
+			{
+				Ar->Serialize(const_cast<uint8*>(Buffer.GetData()), Buffer.Num());
+			}
+
+			delete Ar;
+		}
+		else
+		{
+			UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: FileWrite failed to create."));
+		}
+	}
+	else if (!Texture)
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: TextureRenderTarget must be non-null."));
+	}
+	if (!PathError.IsEmpty())
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: Invalid file path provided: '%s'"), *PathError.ToString());
+	}
+	if (FileName.IsEmpty())
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: FileName must be non-empty."));
+	}
+}
+
 void SaveLandscapeToJson(ALandscape * LandscapeActor, const FString& LandscapeName, const FString& ExportPath)
 {
 	ULandscapeInfo * LandscapeInfo = LandscapeActor->GetLandscapeInfo();
-
-	// output basic info
-	{
-		TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
-		JsonObject->SetStringField(TEXT("name"), LandscapeName);
-		JsonObject->SetStringField(TEXT("type"), TEXT("landscape"));
-		JsonObject->SetNumberField(TEXT("version"), 1);
-		JsonObject->SetStringField(TEXT("desc"), TEXT("Landscape sections from TiX exporter."));
-		JsonObject->SetNumberField(TEXT("section_total"), LandscapeInfo->XYtoComponentMap.Num());
-
-		// output meshes and instances
-		TArray< TSharedPtr<FJsonValue> > JsonLandscapeSections;
-		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
-		{
-			TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
-
-			// Position
-			const FIntPoint& Position = CompPair.Key;
-			TArray< TSharedPtr<FJsonValue> > JPoint;
-			ConvertToJsonArray(Position, JPoint);
-			JSection->SetArrayField(TEXT("point"), JPoint);
-
-			// Set section path
-			//FString SectionPath = ExportPath;
-			//VerifyOrCreateDirectory(SectionPath);
-			FString SectionPath = LandscapeName + "_sections/";
-			FString SectionName = FString::Printf(TEXT("%ssection_%d_%d"), *SectionPath, Position.X, Position.Y);
-
-			JSection->SetStringField(TEXT("section_name"), SectionName);
-
-			TSharedRef< FJsonValueObject > JsonSection = MakeShareable(new FJsonValueObject(JSection));
-			JsonLandscapeSections.Add(JsonSection);
-		}
-		JsonObject->SetArrayField(TEXT("sections"), JsonLandscapeSections);
-
-		SaveJsonToFile(JsonObject, LandscapeName, ExportPath);
-	}
-
 	// Save sections
 	{
 		// output meshes and instances
 		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
 		{
 			const FIntPoint& Position = CompPair.Key;
-			FString SectionName = FString::Printf(TEXT("section_%d_%d"), Position.X, Position.Y);
-
-			TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
-			JsonObject->SetStringField(TEXT("name"), SectionName);
-			JsonObject->SetStringField(TEXT("type"), TEXT("landscape_section"));
-			JsonObject->SetNumberField(TEXT("version"), 1);
-			JsonObject->SetStringField(TEXT("desc"), TEXT("Landscape heightmap from TiX exporter."));
-			JsonObject->SetNumberField(TEXT("section_x"), Position.X);
-			JsonObject->SetNumberField(TEXT("section_y"), Position.Y);
+			FString SectionName = FString::Printf(TEXT("section_%d_%d.hdr"), Position.X, Position.Y);
 
 			// Set section path
 			FString SectionPath = ExportPath;
@@ -279,26 +284,8 @@ void SaveLandscapeToJson(ALandscape * LandscapeActor, const FString& LandscapeNa
 			// Heightmap
 			const ULandscapeComponent * LandscapeComponent = CompPair.Value;
 			UTexture2D * HeightmapTexture = LandscapeComponent->HeightmapTexture;
-			FColor * HeightmapData = (FColor*)HeightmapTexture->Source.LockMip(0);
-			const int32 W = HeightmapTexture->GetSizeX();
-			const int32 H = HeightmapTexture->GetSizeY();
-
-			TArray< TSharedPtr<FJsonValue> > JHeightmap;
-			JHeightmap.Reserve(W * H);
-			for (int32 y = 0; y < H; ++y)
-			{
-				for (int32 x = 0; x < W; ++x)
-				{
-					const FColor& C = HeightmapData[y * W + x];
-					uint32 Height = (C.R << 8) | C.G;
-					TSharedRef< FJsonValueNumber > JHeightValue = MakeShareable(new FJsonValueNumber(Height));
-					JHeightmap.Add(JHeightValue);
-				}
-			}
-			JsonObject->SetArrayField(TEXT("heightmap"), JHeightmap);
-			HeightmapTexture->Source.UnlockMip(0);
-
-			SaveJsonToFile(JsonObject, SectionName, SectionPath);
+			SaveUTextureToHDR(HeightmapTexture, SectionName, SectionPath);
+			UE_LOG(LogTiXExporter, Log, TEXT("  Exported landscape texture %s%s ..."), *SectionPath, *SectionName);
 		}
 	}
 }
@@ -460,6 +447,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 			for (auto A : LandscapeActors)
 			{
 				ALandscape * LandscapeActor = static_cast<ALandscape *>(A);
+				ULandscapeInfo * LandscapeInfo = LandscapeActor->GetLandscapeInfo();
 				TSharedPtr<FJsonObject> JLandscape = MakeShareable(new FJsonObject);
 				FString LandscapeName = CurrentWorld->GetName() + TEXT("-") + LandscapeActor->GetName();
 				JLandscape->SetStringField(TEXT("name"), LandscapeName);
@@ -472,6 +460,32 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 				JLandscape->SetArrayField(TEXT("rotation"), JRotation);
 				JLandscape->SetArrayField(TEXT("scale"), JScale);
 
+				// output sections
+				TArray< TSharedPtr<FJsonValue> > JsonLandscapeSections;
+				for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
+				{
+					TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
+
+					// Position
+					const FIntPoint& Position = CompPair.Key;
+					TArray< TSharedPtr<FJsonValue> > JPoint;
+					ConvertToJsonArray(Position, JPoint);
+					JSection->SetArrayField(TEXT("point"), JPoint);
+
+					// Set section path
+					//FString SectionPath = ExportPath;
+					//VerifyOrCreateDirectory(SectionPath);
+					FString SectionPath = LandscapeName + "_sections/";
+					FString SectionName = FString::Printf(TEXT("%ssection_%d_%d.hdr"), *SectionPath, Position.X, Position.Y);
+
+					JSection->SetStringField(TEXT("section_name"), SectionName);
+
+					TSharedRef< FJsonValueObject > JsonSection = MakeShareable(new FJsonValueObject(JSection));
+					JsonLandscapeSections.Add(JsonSection);
+				}
+				JLandscape->SetArrayField(TEXT("sections"), JsonLandscapeSections);
+
+
 				TSharedRef< FJsonValueObject > JsonLandscape = MakeShareable(new FJsonValueObject(JLandscape));
 				JsonLandscapes.Add(JsonLandscape);
 			}
@@ -482,7 +496,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 	}
 	ActorInstances.Empty();
 
-	// Output landscape to Json file.
+	// Output landscape sections to png
 	if (LandscapeActors.Num() > 0)
 	{
 		for (auto A : LandscapeActors)
