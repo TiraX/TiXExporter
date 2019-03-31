@@ -138,6 +138,14 @@ void ConvertToJsonArray(const TArray<FVector2D>& VectorArray, TArray< TSharedPtr
 		ConvertToJsonArray(v, OutArray);
 	}
 }
+void ConvertToJsonArray(const TArray<FString>& StringArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	for (const auto& s : StringArray)
+	{
+		TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(s));
+		OutArray.Add(JsonValue);
+	}
+}
 
 void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, const FString& Path)
 {
@@ -206,39 +214,40 @@ void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FStri
 	}
 }
 
-void SaveLandscapeToJson(ALandscape * LandscapeActor, const FString& LandscapeName, const FString& ExportPath)
+void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
-	ULandscapeInfo * LandscapeInfo = LandscapeActor->GetLandscapeInfo();
-	// Save sections
+	for (const auto& v : VertexArray)
 	{
-		FString ExportPathLocal = ExportPath;
-		VerifyOrCreateDirectory(ExportPathLocal);
-		FString SectionPath = ExportPathLocal + LandscapeName + "_sections/";
+		ConvertToJsonArray(v.Position, OutArray);
 
-		// output meshes and instances
-		TArray<UTexture2D*> HeightmapTextures;
-		TArray<FString> SectionNames;
-		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
+		if ((VsFormat & EVSSEG_NORMAL) != 0)
 		{
-			const FIntPoint& Position = CompPair.Key;
-			FString SectionName = FString::Printf(TEXT("section_%d_%d.hdr"), Position.X, Position.Y);
-			
-			// Heightmap
-			const ULandscapeComponent * LandscapeComponent = CompPair.Value;
-			UTexture2D * HeightmapTexture = LandscapeComponent->HeightmapTexture;
-			if (HeightmapTextures.Find(HeightmapTexture) == INDEX_NONE)
-			{
-				HeightmapTextures.Add(HeightmapTexture);
-				SectionNames.Add(SectionName);
-			}
+			ConvertToJsonArray(v.Normal, OutArray);
 		}
-
-		for (int32 TexIndex = 0 ; TexIndex < HeightmapTextures.Num() ; ++ TexIndex)
+		if ((VsFormat & EVSSEG_COLOR) != 0)
 		{
-			SaveUTextureToHDR(HeightmapTextures[TexIndex], SectionNames[TexIndex], SectionPath);
-			UE_LOG(LogTiXExporter, Log, TEXT("  Exported landscape texture %s%s ..."), *SectionPath, *SectionNames[TexIndex]);
+			ConvertToJsonArray(v.Color, OutArray);
 		}
-
+		if ((VsFormat & EVSSEG_TEXCOORD0) != 0)
+		{
+			ConvertToJsonArray(v.TexCoords[0], OutArray);
+		}
+		if ((VsFormat & EVSSEG_TEXCOORD1) != 0)
+		{
+			ConvertToJsonArray(v.TexCoords[1], OutArray);
+		}
+		if ((VsFormat & EVSSEG_TANGENT) != 0)
+		{
+			ConvertToJsonArray(v.TangentX, OutArray);
+		}
+		if ((VsFormat & EVSSEG_BLENDINDEX) != 0)
+		{
+			ConvertToJsonArray(v.BlendIndex, OutArray);
+		}
+		if ((VsFormat & EVSSEG_BLENDWEIGHT) != 0)
+		{
+			ConvertToJsonArray(v.BlendWeight, OutArray);
+		}
 	}
 }
 
@@ -246,4 +255,61 @@ void SaveLandscapeToJson(ALandscape * LandscapeActor, const FString& LandscapeNa
 bool ContainComponent(const TArray<FString>& Components, const FString& CompName)
 {
 	return Components.Find(CompName) != INDEX_NONE;
+}
+
+FString GetResourcePath(const UObject * Resource)
+{
+	FString SM_GamePath = Resource->GetPathName();
+	SM_GamePath = SM_GamePath.Replace(TEXT("/Game/"), TEXT(""));
+	int32 DotIndex;
+	bool LastDot = SM_GamePath.FindLastChar('.', DotIndex);
+	if (LastDot)
+	{
+		SM_GamePath = SM_GamePath.Mid(0, DotIndex);
+	}
+	int32 SlashIndex;
+	bool LastSlash = SM_GamePath.FindLastChar('/', SlashIndex);
+	FString Path;
+	if (LastSlash)
+	{
+		Path = SM_GamePath.Mid(0, SlashIndex + 1);
+	}
+	return Path;
+}
+
+FString GetResourcePathName(const UObject * Resource)
+{
+	return GetResourcePath(Resource) + Resource->GetName();
+}
+
+TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& MaterialInstanceName, int32 VsFormat)
+{
+	TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
+	JSection->SetNumberField(TEXT("vertex_count"), Vertices.Num());
+
+	JSection->SetStringField(TEXT("material"), MaterialInstanceName);
+
+	TArray< TSharedPtr<FJsonValue> > IndicesArray, VerticesArray;
+	TArray< TSharedPtr<FJsonValue> > FormatArray;
+
+	ConvertToJsonArray(Vertices, VsFormat, VerticesArray);
+	JSection->SetArrayField(TEXT("vertices"), VerticesArray);
+
+	ConvertToJsonArray(Indices, IndicesArray);
+	JSection->SetArrayField(TEXT("indices"), IndicesArray);
+
+#define ADD_VS_FORMAT(Format) if ((VsFormat & Format) != 0) FormatArray.Add(MakeShareable(new FJsonValueString(TEXT(#Format))))
+	ADD_VS_FORMAT(EVSSEG_POSITION);
+	ADD_VS_FORMAT(EVSSEG_NORMAL);
+	ADD_VS_FORMAT(EVSSEG_COLOR);
+	ADD_VS_FORMAT(EVSSEG_TEXCOORD0);
+	ADD_VS_FORMAT(EVSSEG_TEXCOORD1);
+	ADD_VS_FORMAT(EVSSEG_TANGENT);
+	ADD_VS_FORMAT(EVSSEG_BLENDINDEX);
+	ADD_VS_FORMAT(EVSSEG_BLENDWEIGHT);
+#undef ADD_VS_FORMAT
+
+	JSection->SetArrayField(TEXT("vs_format"), FormatArray);
+
+	return JSection;
 }

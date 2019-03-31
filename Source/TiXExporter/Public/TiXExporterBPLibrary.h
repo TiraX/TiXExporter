@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "TiXExporterDefines.h"
 #include "TiXExporterBPLibrary.generated.h"
 
 /* 
@@ -30,6 +31,7 @@ class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_UCLASS_BODY()
 
+public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Current Scene", Keywords = "TiX Export Current Scene"), Category = "TiXExporter")
 	static void ExportCurrentScene(AActor * Actor, const FString& ExportPath, const TArray<FString>& SceneComponents, const TArray<FString>& MeshComponents, float MeshVertexPositionScale = 1.f);
 
@@ -43,5 +45,13 @@ class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
 		Param: Components should be combine of one or more in "POSITION, NORMAL, COLOR, TEXCOORD0, TEXCOORD1, TANGENT, BLENDINDEX, BLENDWEIGHT".
 	*/
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Static Mesh", Keywords = "TiX Export Static Mesh"), Category = "TiXExporter")
-	static void ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale = 1.f);
+	static void ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale);
+
+private:
+	static void ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency);
+
+	static void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency);
+	static void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency);
+	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
+	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
 };
