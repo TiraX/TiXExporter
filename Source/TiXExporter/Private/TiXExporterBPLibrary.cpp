@@ -23,6 +23,7 @@
 #include "Misc/FileHelper.h"
 #include "Serialization/BufferArchive.h"
 #include "ImageUtils.h"
+#include "TiXExporterHelper.h"
 
 DEFINE_LOG_CATEGORY(LogTiXExporter);
 
@@ -51,6 +52,10 @@ struct FTiXVertex
 	FVector4 BlendIndex;
 	FVector4 BlendWeight;
 
+	FTiXVertex()
+		: Color(1.f, 1.f, 1.f, 1.f)
+	{}
+
 	bool operator == (const FTiXVertex& Other) const
 	{
 		return FMemory::Memcmp(this, &Other, sizeof(FTiXVertex)) == 0;
@@ -73,96 +78,6 @@ uint32 GetTypeHash(const FTiXVertex& Vertex)
 	return FCrc::MemCrc_DEPRECATED(&Vertex, sizeof(Vertex));
 }
 
-static bool VerifyOrCreateDirectory(FString& TargetDir)
-{
-	TargetDir.Replace(TEXT("\\"), TEXT("/"));
-	if (!TargetDir.EndsWith(TEXT("/")))
-	{
-		TargetDir += TEXT("/");
-	}
-
-	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-
-	// Directory Exists? 
-	if (!PlatformFile.DirectoryExists(*TargetDir))
-	{
-		PlatformFile.CreateDirectory(*TargetDir);
-	}
-
-	if (!PlatformFile.DirectoryExists(*TargetDir)) {
-		return false;
-	}
-	return true; 
-}
-
-void ConvertToJsonArray(const FVector2D& VectorValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
-{
-	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(VectorValue.X));
-	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(VectorValue.Y));
-
-	OutArray.Add(JsonValueX);
-	OutArray.Add(JsonValueY);
-}
-
-void ConvertToJsonArray(const FVector& VectorValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
-{
-	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(VectorValue.X));
-	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(VectorValue.Y));
-	TSharedRef< FJsonValueNumber > JsonValueZ = MakeShareable(new FJsonValueNumber(VectorValue.Z));
-
-	OutArray.Add(JsonValueX);
-	OutArray.Add(JsonValueY);
-	OutArray.Add(JsonValueZ);
-}
-
-void ConvertToJsonArray(const FQuat& QuatValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
-{
-	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(QuatValue.X));
-	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(QuatValue.Y));
-	TSharedRef< FJsonValueNumber > JsonValueZ = MakeShareable(new FJsonValueNumber(QuatValue.Z));
-	TSharedRef< FJsonValueNumber > JsonValueW = MakeShareable(new FJsonValueNumber(QuatValue.W));
-
-	OutArray.Add(JsonValueX);
-	OutArray.Add(JsonValueY);
-	OutArray.Add(JsonValueZ);
-	OutArray.Add(JsonValueW);
-}
-
-void ConvertToJsonArray(const FVector4& Vector4Value, TArray< TSharedPtr<FJsonValue> >& OutArray)
-{
-	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(Vector4Value.X));
-	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(Vector4Value.Y));
-	TSharedRef< FJsonValueNumber > JsonValueZ = MakeShareable(new FJsonValueNumber(Vector4Value.Z));
-	TSharedRef< FJsonValueNumber > JsonValueW = MakeShareable(new FJsonValueNumber(Vector4Value.W));
-
-	OutArray.Add(JsonValueX);
-	OutArray.Add(JsonValueY);
-	OutArray.Add(JsonValueZ);
-	OutArray.Add(JsonValueW);
-}
-
-void ConvertToJsonArray(const TArray<int32>& IntArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
-{
-	for (const auto& v : IntArray)
-	{
-		TSharedRef< FJsonValueNumber > JsonValue = MakeShareable(new FJsonValueNumber(v));
-		OutArray.Add(JsonValue);
-	}
-}
-void ConvertToJsonArray(const TArray<FVector>& VectorArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
-{
-	for (const auto& v : VectorArray)
-	{
-		ConvertToJsonArray(v, OutArray);
-	}
-}
-void ConvertToJsonArray(const TArray<FVector2D>& VectorArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
-{
-	for (const auto& v : VectorArray)
-	{
-		ConvertToJsonArray(v, OutArray);
-	}
-}
 void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	for (const auto& v : VertexArray)
@@ -200,105 +115,13 @@ void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, 
 	}
 }
 
-void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, const FString& Path)
-{
-	FString OutputString;
-	TSharedRef< TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR> > > Writer = TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutputString);
-	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
-
-	FString ExportPathStr = Path;
-	if (VerifyOrCreateDirectory(ExportPathStr))
-	{
-		FString PathName = ExportPathStr + Name + TEXT(".tjs");
-		FFileHelper::SaveStringToFile(OutputString, *PathName);
-	}
-	else
-	{
-		UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportPathStr);
-	}
-}
-
-void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FString& Path)
-{
-	FString ExportPathStr = Path;
-	FString ExportName;
-	if (!VerifyOrCreateDirectory(ExportPathStr))
-	{
-		UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportPathStr);
-		return;
-	}
-
-	FString TotalFileName = FPaths::Combine(*ExportPathStr, *FileName);
-	FText PathError;
-	FPaths::ValidatePath(TotalFileName, &PathError);
-
-	if (Texture && !FileName.IsEmpty() && PathError.IsEmpty())
-	{
-		FArchive* Ar = IFileManager::Get().CreateFileWriter(*TotalFileName);
-
-		if (Ar)
-		{
-			FBufferArchive Buffer;
-			bool bSuccess = FImageUtils::ExportTexture2DAsHDR(Texture, Buffer);
-
-			if (bSuccess)
-			{
-				Ar->Serialize(const_cast<uint8*>(Buffer.GetData()), Buffer.Num());
-			}
-
-			delete Ar;
-		}
-		else
-		{
-			UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: FileWrite failed to create."));
-		}
-	}
-	else if (!Texture)
-	{
-		UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: TextureRenderTarget must be non-null."));
-	}
-	if (!PathError.IsEmpty())
-	{
-		UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: Invalid file path provided: '%s'"), *PathError.ToString());
-	}
-	if (FileName.IsEmpty())
-	{
-		UE_LOG(LogTiXExporter, Error, TEXT("SaveUTextureToPNG: FileName must be non-empty."));
-	}
-}
-
-void SaveLandscapeToJson(ALandscape * LandscapeActor, const FString& LandscapeName, const FString& ExportPath)
-{
-	ULandscapeInfo * LandscapeInfo = LandscapeActor->GetLandscapeInfo();
-	// Save sections
-	{
-		// output meshes and instances
-		for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
-		{
-			const FIntPoint& Position = CompPair.Key;
-			FString SectionName = FString::Printf(TEXT("section_%d_%d.hdr"), Position.X, Position.Y);
-
-			// Set section path
-			FString SectionPath = ExportPath;
-			VerifyOrCreateDirectory(SectionPath);
-			SectionPath += LandscapeName + "_sections/";
-
-			// Heightmap
-			const ULandscapeComponent * LandscapeComponent = CompPair.Value;
-			UTexture2D * HeightmapTexture = LandscapeComponent->HeightmapTexture;
-			SaveUTextureToHDR(HeightmapTexture, SectionName, SectionPath);
-			UE_LOG(LogTiXExporter, Log, TEXT("  Exported landscape texture %s%s ..."), *SectionPath, *SectionName);
-		}
-	}
-}
-
 UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
 {
 
 }
 
-void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& ExportPath)
+void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& ExportPath, const TArray<FString>& SceneComponents, const TArray<FString>& MeshComponents, float MeshVertexPositionScale)
 {
 	UWorld * CurrentWorld = Actor->GetWorld();
 	ULevel * CurrentLevel = CurrentWorld->GetCurrentLevel();
@@ -306,58 +129,67 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 	TMap<UStaticMesh *, TArray<FTiXInstance> > ActorInstances;
 
 	TArray<AActor*> Actors;
+	int32 a = 0;
 	UE_LOG(LogTiXExporter, Log, TEXT("Export tix scene ..."));
 
-	UE_LOG(LogTiXExporter, Log, TEXT("  Static meshes..."));
-	UGameplayStatics::GetAllActorsOfClass(Actor, AStaticMeshActor::StaticClass(), Actors);
-	int32 a = 0;
-	for (auto A : Actors)
+	if (ContainComponent(SceneComponents, TEXT("STATIC_MESH")))
 	{
-		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
-		AStaticMeshActor * SMActor = static_cast<AStaticMeshActor*>(A);
-		UStaticMesh * StaticMesh = SMActor->GetStaticMeshComponent()->GetStaticMesh();
-
-		TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
-		FTiXInstance InstanceInfo;
-		InstanceInfo.Position = SMActor->GetTransform().GetLocation();
-		InstanceInfo.Rotation = SMActor->GetTransform().GetRotation();
-		InstanceInfo.Scale = SMActor->GetTransform().GetScale3D();
-		Instances.Add(InstanceInfo);
-	}
-
-	UE_LOG(LogTiXExporter, Log, TEXT(" Skeletal meshes..."));
-	Actors.Empty();
-	UGameplayStatics::GetAllActorsOfClass(Actor, ASkeletalMeshActor::StaticClass(), Actors);
-	for (auto A : Actors)
-	{
-		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
-	}
-
-	UE_LOG(LogTiXExporter, Log, TEXT(" Foliage and grass..."));
-	Actors.Empty();
-	UGameplayStatics::GetAllActorsOfClass(Actor, AInstancedFoliageActor::StaticClass(), Actors);
-	for (auto A : Actors)
-	{
-		UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
-		AInstancedFoliageActor * FoliageActor = (AInstancedFoliageActor*)A;
-		for (const auto& MeshPair : FoliageActor->FoliageMeshes)
+		UE_LOG(LogTiXExporter, Log, TEXT("  Static mesh actors..."));
+		UGameplayStatics::GetAllActorsOfClass(Actor, AStaticMeshActor::StaticClass(), Actors);
+		for (auto A : Actors)
 		{
-			const FFoliageMeshInfo& MeshInfo = *MeshPair.Value;
+			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+			AStaticMeshActor * SMActor = static_cast<AStaticMeshActor*>(A);
+			UStaticMesh * StaticMesh = SMActor->GetStaticMeshComponent()->GetStaticMesh();
 
-			UHierarchicalInstancedStaticMeshComponent* MeshComponent = MeshInfo.Component;
-			TArray<FInstancedStaticMeshInstanceData> MeshDataArray = MeshComponent->PerInstanceSMData;
-
-			UStaticMesh * StaticMesh = MeshComponent->GetStaticMesh();
 			TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
+			FTiXInstance InstanceInfo;
+			InstanceInfo.Position = SMActor->GetTransform().GetLocation() * MeshVertexPositionScale;
+			InstanceInfo.Rotation = SMActor->GetTransform().GetRotation();
+			InstanceInfo.Scale = SMActor->GetTransform().GetScale3D();
+			Instances.Add(InstanceInfo);
+		}
+	}
 
-			for (auto& MeshMatrix : MeshDataArray)
+	if (ContainComponent(SceneComponents, TEXT("SKELETAL_MESH")))
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT(" Skeletal mesh actors..."));
+		Actors.Empty();
+		UGameplayStatics::GetAllActorsOfClass(Actor, ASkeletalMeshActor::StaticClass(), Actors);
+		for (auto A : Actors)
+		{
+			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+		}
+	}
+
+	if (ContainComponent(SceneComponents, TEXT("FOLIAGE_AND_GRASS")))
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT(" Foliage and grass  actors..."));
+		Actors.Empty();
+		UGameplayStatics::GetAllActorsOfClass(Actor, AInstancedFoliageActor::StaticClass(), Actors);
+		for (auto A : Actors)
+		{
+			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+			AInstancedFoliageActor * FoliageActor = (AInstancedFoliageActor*)A;
+			for (const auto& MeshPair : FoliageActor->FoliageMeshes)
 			{
-				FTransform MeshTransform = FTransform(MeshMatrix.Transform);
-				FTiXInstance InstanceInfo;
-				InstanceInfo.Position = MeshTransform.GetLocation();
-				InstanceInfo.Rotation = MeshTransform.GetRotation();
-				InstanceInfo.Scale = MeshTransform.GetScale3D();
-				Instances.Add(InstanceInfo);
+				const FFoliageMeshInfo& MeshInfo = *MeshPair.Value;
+
+				UHierarchicalInstancedStaticMeshComponent* MeshComponent = MeshInfo.Component;
+				TArray<FInstancedStaticMeshInstanceData> MeshDataArray = MeshComponent->PerInstanceSMData;
+
+				UStaticMesh * StaticMesh = MeshComponent->GetStaticMesh();
+				TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
+
+				for (auto& MeshMatrix : MeshDataArray)
+				{
+					FTransform MeshTransform = FTransform(MeshMatrix.Transform);
+					FTiXInstance InstanceInfo;
+					InstanceInfo.Position = MeshTransform.GetLocation() * MeshVertexPositionScale;
+					InstanceInfo.Rotation = MeshTransform.GetRotation();
+					InstanceInfo.Scale = MeshTransform.GetScale3D();
+					Instances.Add(InstanceInfo);
+				}
 			}
 		}
 	}
@@ -450,64 +282,79 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 		JsonObject->SetObjectField(TEXT("environment"), JEnvironment);
 
 		// output landscapes
-		UE_LOG(LogTiXExporter, Log, TEXT(" Landscapes..."));
-		TArray<AActor*> LandscapeActors;
-		UGameplayStatics::GetAllActorsOfClass(Actor, ALandscape::StaticClass(), LandscapeActors);
-		if (LandscapeActors.Num() > 0)
+		if (ContainComponent(SceneComponents, TEXT("LANDSCAPE")))
 		{
-			TArray< TSharedPtr<FJsonValue> > JsonLandscapes;
-			for (auto A : LandscapeActors)
+			UE_LOG(LogTiXExporter, Log, TEXT(" Landscapes..."));
+			TArray<AActor*> LandscapeActors;
+			UGameplayStatics::GetAllActorsOfClass(Actor, ALandscape::StaticClass(), LandscapeActors);
+			if (LandscapeActors.Num() > 0)
 			{
-				ALandscape * LandscapeActor = static_cast<ALandscape *>(A);
-				ULandscapeInfo * LandscapeInfo = LandscapeActor->GetLandscapeInfo();
-				TSharedPtr<FJsonObject> JLandscape = MakeShareable(new FJsonObject);
-				FString LandscapeName = CurrentWorld->GetName() + TEXT("-") + LandscapeActor->GetName();
-				JLandscape->SetStringField(TEXT("name"), LandscapeName);
-
-				TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
-				ConvertToJsonArray(LandscapeActor->GetTransform().GetLocation(), JPosition);
-				ConvertToJsonArray(LandscapeActor->GetTransform().GetRotation(), JRotation);
-				ConvertToJsonArray(LandscapeActor->GetTransform().GetScale3D(), JScale);
-				JLandscape->SetArrayField(TEXT("position"), JPosition);
-				JLandscape->SetArrayField(TEXT("rotation"), JRotation);
-				JLandscape->SetArrayField(TEXT("scale"), JScale);
-
-				// output sections
-				TArray< TSharedPtr<FJsonValue> > JsonLandscapeSections;
-				for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
+				TArray< TSharedPtr<FJsonValue> > JsonLandscapes;
+				for (auto A : LandscapeActors)
 				{
-					TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
+					ALandscape * LandscapeActor = static_cast<ALandscape *>(A);
+					ULandscapeInfo * LandscapeInfo = LandscapeActor->GetLandscapeInfo();
+					TSharedPtr<FJsonObject> JLandscape = MakeShareable(new FJsonObject);
+					FString LandscapeName = CurrentWorld->GetName() + TEXT("-") + LandscapeActor->GetName();
+					JLandscape->SetStringField(TEXT("name"), LandscapeName);
 
-					// Position
-					const FIntPoint& Position = CompPair.Key;
-					TArray< TSharedPtr<FJsonValue> > JPoint;
-					ConvertToJsonArray(Position, JPoint);
-					JSection->SetArrayField(TEXT("point"), JPoint);
+					TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
+					ConvertToJsonArray(LandscapeActor->GetTransform().GetLocation() * MeshVertexPositionScale, JPosition);
+					ConvertToJsonArray(LandscapeActor->GetTransform().GetRotation(), JRotation);
+					ConvertToJsonArray(LandscapeActor->GetTransform().GetScale3D(), JScale);
+					JLandscape->SetArrayField(TEXT("position"), JPosition);
+					JLandscape->SetArrayField(TEXT("rotation"), JRotation);
+					JLandscape->SetArrayField(TEXT("scale"), JScale);
 
-					// Set section path
-					//FString SectionPath = ExportPath;
-					//VerifyOrCreateDirectory(SectionPath);
-					FString SectionPath = LandscapeName + "_sections/";
-					FString SectionName = FString::Printf(TEXT("%ssection_%d_%d.hdr"), *SectionPath, Position.X, Position.Y);
+					// output sections
+					TArray< TSharedPtr<FJsonValue> > JsonLandscapeSections;
+					for (const auto& CompPair : LandscapeInfo->XYtoComponentMap)
+					{
+						TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
 
-					JSection->SetStringField(TEXT("section_name"), SectionName);
+						// Position
+						const FIntPoint& Position = CompPair.Key;
+						TArray< TSharedPtr<FJsonValue> > JPoint;
+						ConvertToJsonArray(Position, JPoint);
+						JSection->SetArrayField(TEXT("point"), JPoint);
 
-					TSharedRef< FJsonValueObject > JsonSection = MakeShareable(new FJsonValueObject(JSection));
-					JsonLandscapeSections.Add(JsonSection);
+						// Set section path
+						//FString SectionPath = ExportPath;
+						//VerifyOrCreateDirectory(SectionPath);
+						FString SectionPath = LandscapeName + "_sections/";
+						FString SectionName = FString::Printf(TEXT("%ssection_%d_%d.hdr"), *SectionPath, Position.X, Position.Y);
+
+						JSection->SetStringField(TEXT("section_name"), SectionName);
+
+						TSharedRef< FJsonValueObject > JsonSection = MakeShareable(new FJsonValueObject(JSection));
+						JsonLandscapeSections.Add(JsonSection);
+					}
+					JLandscape->SetArrayField(TEXT("sections"), JsonLandscapeSections);
+
+
+					TSharedRef< FJsonValueObject > JsonLandscape = MakeShareable(new FJsonValueObject(JLandscape));
+					JsonLandscapes.Add(JsonLandscape);
+
+
+					SaveLandscapeToJson(LandscapeActor, LandscapeName, ExportPath);
 				}
-				JLandscape->SetArrayField(TEXT("sections"), JsonLandscapeSections);
-
-
-				TSharedRef< FJsonValueObject > JsonLandscape = MakeShareable(new FJsonValueObject(JLandscape));
-				JsonLandscapes.Add(JsonLandscape);
-
-
-				SaveLandscapeToJson(LandscapeActor, LandscapeName, ExportPath);
+				JsonObject->SetArrayField(TEXT("landscape"), JsonLandscapes);
 			}
-			JsonObject->SetArrayField(TEXT("landscape"), JsonLandscapes);
 		}
 
 		SaveJsonToFile(JsonObject, CurrentWorld->GetName(), ExportPath);
+	}
+
+	// Export mesh resources
+	if (ContainComponent(SceneComponents, TEXT("STATIC_MESH")))
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT("  Static meshes..."));
+
+		for (auto& MeshPair : ActorInstances)
+		{
+			UStaticMesh * Mesh = MeshPair.Key;
+			ExportStaticMesh(Mesh, ExportPath, MeshComponents, MeshVertexPositionScale);
+		}
 	}
 	ActorInstances.Empty();
 }
@@ -559,7 +406,7 @@ void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path
 
 	// Get Vertex format
 	uint32 VsFormat = 0;
-	if (PositionVertexBuffer.GetNumVertices() > 0 && Components.Find(TEXT("POSITION")) != INDEX_NONE)
+	if (PositionVertexBuffer.GetNumVertices() > 0 && ContainComponent(Components, (TEXT("POSITION"))))
 	{
 		VsFormat |= EVSSEG_POSITION;
 	}
@@ -570,20 +417,20 @@ void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path
 	}
 	if (StaticMeshVertexBuffer.GetNumVertices() > 0)
 	{
-		if (Components.Find(TEXT("NORMAL")) != INDEX_NONE)
+		if (ContainComponent(Components, (TEXT("NORMAL"))))
 			VsFormat |= EVSSEG_NORMAL;
-		if (Components.Find(TEXT("TANGENT")) != INDEX_NONE)
+		if (ContainComponent(Components, (TEXT("TANGENT"))))
 			VsFormat |= EVSSEG_TANGENT;
 	}
-	if (ColorVertexBuffer.GetNumVertices() > 0 && Components.Find(TEXT("COLOR")) != INDEX_NONE)
+	if (ColorVertexBuffer.GetNumVertices() > 0 && ContainComponent(Components, (TEXT("COLOR"))))
 	{
 		VsFormat |= EVSSEG_COLOR;
 	}
-	if (TotalNumTexCoords > 0 && Components.Find(TEXT("TEXCOORD0")) != INDEX_NONE)
+	if (TotalNumTexCoords > 0 && ContainComponent(Components, (TEXT("TEXCOORD0"))))
 	{
 		VsFormat |= EVSSEG_TEXCOORD0;
 	}
-	if (TotalNumTexCoords > 1 && Components.Find(TEXT("TEXCOORD1")) != INDEX_NONE)
+	if (TotalNumTexCoords > 1 && ContainComponent(Components, (TEXT("TEXCOORD1"))))
 	{
 		VsFormat |= EVSSEG_TEXCOORD1;
 	}
@@ -614,18 +461,31 @@ void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path
 			uint32 Index = MeshIndices[ii];
 			FTiXVertex Vertex;
 			Vertex.Position = PositionVertexBuffer.VertexPosition(Index) * MeshVertexPositionScale;
-			Vertex.Normal = StaticMeshVertexBuffer.VertexTangentZ(Index).GetSafeNormal();
-			Vertex.TangentX = StaticMeshVertexBuffer.VertexTangentX(Index).GetSafeNormal();
-			for (int32 uv = 0; uv < TotalNumTexCoords && uv < MAX_TIX_TEXTURE_COORDS; ++uv)
+			if ((VsFormat & EVSSEG_NORMAL) != 0)
 			{
-				Vertex.TexCoords[uv] = StaticMeshVertexBuffer.GetVertexUV(Index, uv);
+				Vertex.Normal = StaticMeshVertexBuffer.VertexTangentZ(Index).GetSafeNormal();
 			}
-			FColor C = ColorVertexBuffer.VertexColor(Index);
-			const float OneOver255 = 1.f / 255.f;
-			Vertex.Color.X = C.R * OneOver255;
-			Vertex.Color.Y = C.G * OneOver255;
-			Vertex.Color.Z = C.B * OneOver255;
-			Vertex.Color.W = C.A * OneOver255;
+			if ((VsFormat & EVSSEG_TANGENT) != 0)
+			{
+				Vertex.TangentX = StaticMeshVertexBuffer.VertexTangentX(Index).GetSafeNormal();
+			}
+			if ((VsFormat & EVSSEG_TEXCOORD0) != 0)
+			{
+				Vertex.TexCoords[0] = StaticMeshVertexBuffer.GetVertexUV(Index, 0);
+			}
+			if ((VsFormat & EVSSEG_TEXCOORD1) != 0)
+			{
+				Vertex.TexCoords[1] = StaticMeshVertexBuffer.GetVertexUV(Index, 1);
+			}
+			if ((VsFormat & EVSSEG_COLOR) != 0)
+			{
+				FColor C = ColorVertexBuffer.VertexColor(Index);
+				const float OneOver255 = 1.f / 255.f;
+				Vertex.Color.X = C.R * OneOver255;
+				Vertex.Color.Y = C.G * OneOver255;
+				Vertex.Color.Z = C.B * OneOver255;
+				Vertex.Color.W = C.A * OneOver255;
+			}
 
 			// gather vertices and indices
 			int32 * VertexIndex = IndexMapSection.Find(Vertex);
@@ -729,7 +589,7 @@ void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, c
 
 		// Get Vertex format
 		uint32 VsFormat = 0;
-		if (MeshData.VertexPositions.Num() > 0 && Components.Find(TEXT("POSITION")) != INDEX_NONE)
+		if (MeshData.VertexPositions.Num() > 0 && ContainComponent(Components, (TEXT("POSITION"))))
 		{
 			VsFormat |= EVSSEG_POSITION;
 		}
@@ -738,23 +598,23 @@ void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, c
 			UE_LOG(LogTiXExporter, Error, TEXT("Static mesh [%s] do not have position stream."), *StaticMesh->GetPathName());
 			return;
 		}
-		if (MeshData.WedgeTangentZ.Num() > 0 && Components.Find(TEXT("NORMAL")) != INDEX_NONE)
+		if (MeshData.WedgeTangentZ.Num() > 0 && ContainComponent(Components, (TEXT("NORMAL"))))
 		{
 			VsFormat |= EVSSEG_NORMAL;
 		}
-		if (MeshData.WedgeColors.Num() > 0 && Components.Find(TEXT("COLOR")) != INDEX_NONE)
+		if (MeshData.WedgeColors.Num() > 0 && ContainComponent(Components, (TEXT("COLOR"))))
 		{
 			VsFormat |= EVSSEG_COLOR;
 		}
-		if (MeshData.WedgeTexCoords[0].Num() > 0 && Components.Find(TEXT("TEXCOORD0")) != INDEX_NONE)
+		if (MeshData.WedgeTexCoords[0].Num() > 0 && ContainComponent(Components, (TEXT("TEXCOORD0"))))
 		{
 			VsFormat |= EVSSEG_TEXCOORD0;
 		}
-		if (MeshData.WedgeTexCoords[1].Num() > 0 && Components.Find(TEXT("TEXCOORD1")) != INDEX_NONE)
+		if (MeshData.WedgeTexCoords[1].Num() > 0 && ContainComponent(Components, (TEXT("TEXCOORD1"))))
 		{
 			VsFormat |= EVSSEG_TEXCOORD1;
 		}
-		if (MeshData.WedgeTangentX.Num() > 0 && Components.Find(TEXT("TANGENT")) != INDEX_NONE)
+		if (MeshData.WedgeTangentX.Num() > 0 && ContainComponent(Components, (TEXT("TANGENT"))))
 		{
 			VsFormat |= EVSSEG_TANGENT;
 		}
@@ -848,9 +708,14 @@ void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, c
 	}
 }
 
-void UTiXExporterBPLibrary::ExportStaticMesh(AStaticMeshActor * Actor, FString ExportPath, TArray<FString> Components, float MeshVertexPositionScale)
+void UTiXExporterBPLibrary::ExportStaticMeshActor(AStaticMeshActor * StaticMeshActor, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale)
 {
-	UStaticMesh* StaticMesh = Actor->GetStaticMeshComponent()->GetStaticMesh();
+	ExportStaticMesh(StaticMeshActor->GetStaticMeshComponent()->GetStaticMesh(), ExportPath, Components, MeshVertexPositionScale);
+}
+
+void UTiXExporterBPLibrary::ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale)
+{
+	//UStaticMesh* StaticMesh = Actor->GetStaticMeshComponent()->GetStaticMesh();
 	FString SM_GamePath = StaticMesh->GetPathName();
 	SM_GamePath = SM_GamePath.Replace(TEXT("/Game/"), TEXT(""));
 	int32 DotIndex;
