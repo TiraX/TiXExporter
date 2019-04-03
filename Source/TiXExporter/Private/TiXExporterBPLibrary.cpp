@@ -25,6 +25,7 @@
 #include "Misc/FileHelper.h"
 #include "Serialization/BufferArchive.h"
 #include "ImageUtils.h"
+#include "Runtime/Engine/Classes/Exporters/Exporter.h"
 #include "TiXExporterHelper.h"
 
 DEFINE_LOG_CATEGORY(LogTiXExporter);
@@ -737,7 +738,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			TextureParams.Add(TexturePath);
 			TextureParamNames.Add(TextureValue.ParameterInfo.Name.ToString());
 
-			Dependency.DependenciesTextures.AddUnique(TexturePath);
+			ExportTexture(TextureValue.ParameterValue, InExportPath, Dependency);
 		}
 
 		// output json
@@ -872,5 +873,91 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 		JsonObject->SetBoolField(TEXT("depth_test"), bDepthTest);
 		JsonObject->SetBoolField(TEXT("two_sides"), bTwoSides);
 		SaveJsonToFile(JsonObject, InMaterial->GetName(), ExportFullPath);
+	}
+}
+
+void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& InExportPath, FDependency& Dependency)
+{
+	FString Path = GetResourcePath(InTexture);
+	FString ExportPath = InExportPath;
+	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (ExportPath[ExportPath.Len() - 1] != '/')
+		ExportPath.AppendChar('/');
+	FString ExportFullPath = ExportPath + Path;
+
+	FString FullPathName = Path + InTexture->GetName();
+
+	if (!InTexture->IsA(UTexture2D::StaticClass()))
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("  Texture other than UTexture2D NOT supported yet."));
+		return;
+	}
+
+	FString ExtName = TEXT("tga");
+	// Use Dependency to check if this already exported.
+	if (Dependency.DependenciesTextures.Find(FullPathName) != INDEX_NONE)
+	{
+		return;
+	}
+
+	Dependency.DependenciesTextures.AddUnique(FullPathName);
+
+	UTexture2D * InTexture2D = Cast<UTexture2D>(InTexture);
+	FBufferArchive Buffer;
+	UExporter::ExportToArchive(InTexture, nullptr, Buffer, *ExtName, 0);
+
+	VerifyOrCreateDirectory(ExportFullPath);
+	FString ExportFullPathName = ExportFullPath + InTexture->GetName() + TEXT(".") + ExtName;
+	if (Buffer.Num() == 0 || !FFileHelper::SaveArrayToFile(Buffer, *ExportFullPathName))
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("Fail to save texture %s"), *FullPathName);
+		return;
+	}
+
+	// output json
+	{
+		TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+
+		// output basic info
+		JsonObject->SetStringField(TEXT("name"), InTexture->GetName());
+		JsonObject->SetStringField(TEXT("type"), TEXT("texture"));
+		JsonObject->SetNumberField(TEXT("version"), 1);
+		JsonObject->SetStringField(TEXT("desc"), TEXT("Texture from TiX exporter."));
+		JsonObject->SetStringField(TEXT("source"), FullPathName + TEXT(".") + ExtName);
+		JsonObject->SetStringField(TEXT("texture_type"), TEXT("ETT_TEXTURE_2D"));
+		JsonObject->SetNumberField(TEXT("srgb"), InTexture->SRGB ? 1 : 0);
+
+		FString AddressMode;
+		switch (InTexture2D->AddressX)
+		{
+		case TA_Wrap:
+			AddressMode = TEXT("ETC_REPEAT");
+			break;
+		case TA_Clamp:
+			AddressMode = TEXT("ETC_CLAMP_TO_EDGE");
+			break;
+		case TA_Mirror:
+			AddressMode = TEXT("ETC_MIRROR");
+			break;
+		}
+		JsonObject->SetStringField(TEXT("address_mode"), AddressMode);
+
+		if (!FMath::IsPowerOfTwo(InTexture2D->GetSizeX()) ||
+			!FMath::IsPowerOfTwo(InTexture2D->GetSizeY()))
+		{
+			UE_LOG(LogTiXExporter, Warning, TEXT("%s size is not Power of Two. %d, %d."), *InTexture->GetName(), InTexture2D->GetSizeX(), InTexture2D->GetSizeY());
+		}
+
+		const int32 MaxTextureSize = 1024;
+
+		int32 LodBias = 0;
+		if (InTexture2D->GetSizeX() > MaxTextureSize)
+		{
+			uint32 X = FMath::FloorLog2(InTexture2D->GetSizeX());
+			uint32 Y = 10;
+			LodBias = X - Y;
+		}
+		JsonObject->SetNumberField(TEXT("lod_bias"), LodBias);
+		SaveJsonToFile(JsonObject, InTexture->GetName(), ExportFullPath);
 	}
 }

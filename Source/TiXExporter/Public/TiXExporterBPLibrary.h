@@ -54,4 +54,5 @@ private:
 	static void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency);
 	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
 	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
+	static void ExportTexture(UTexture* InTexture, const FString& Path, FDependency& Dependency);
 };
