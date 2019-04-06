@@ -282,11 +282,12 @@ FString GetResourcePathName(const UObject * Resource)
 	return GetResourcePath(Resource) + Resource->GetName();
 }
 
-TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& MaterialInstanceName, int32 VsFormat)
+TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& SectionName, const FString& MaterialInstanceName, int32 VsFormat)
 {
 	TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
-	JSection->SetNumberField(TEXT("vertex_count"), Vertices.Num());
 
+	JSection->SetStringField(TEXT("name"), SectionName);
+	JSection->SetNumberField(TEXT("vertex_count"), Vertices.Num());
 	JSection->SetStringField(TEXT("material"), MaterialInstanceName);
 
 	TArray< TSharedPtr<FJsonValue> > IndicesArray, VerticesArray;

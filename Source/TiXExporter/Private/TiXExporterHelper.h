@@ -24,7 +24,7 @@ void ConvertToJsonArray(const TArray<FString>& StringArray, TArray< TSharedPtr<F
 
 void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, const FString& Path);
 void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FString& Path);
-TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& MaterialInstanceName, int32 VsFormat);
+TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& SectionName, const FString& MaterialInstanceName, int32 VsFormat);
 
 bool ContainComponent(const TArray<FString>& Components, const FString& CompName);
 

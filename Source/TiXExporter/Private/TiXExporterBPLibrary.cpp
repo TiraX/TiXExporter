@@ -402,6 +402,8 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		const int32 MaxVertexIndex = MeshSection.MaxVertexIndex;
 		const int32 FirstIndex = MeshSection.FirstIndex;
 		FString MaterialName = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface->GetName();
+		FString MaterialSlotName = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialSlotName.ToString();
+
 		ExportMaterialInstance(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface, InExportPath, Dependency);
 
 		// data container
@@ -459,7 +461,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 			}
 		}
 
-		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialName, VsFormat);
+		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialSlotName, MaterialName, VsFormat);
 
 		TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
 		JsonSections.Add(JsonSectionValue);
@@ -651,7 +653,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh,
 			TArray< TSharedPtr<FJsonValue> > JsonSections;
 			for (int32 section = 0; section < MaterialSections.Num(); ++section)
 			{
-				TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(Vertices[section], Indices[section], Materials[section]->MaterialInterface->GetName(), VsFormat);
+				TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(Vertices[section], Indices[section], Materials[section]->MaterialSlotName.ToString(), Materials[section]->MaterialInterface->GetName(), VsFormat);
 
 				TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
 				JsonSections.Add(JsonSectionValue);
@@ -923,7 +925,7 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		JsonObject->SetStringField(TEXT("type"), TEXT("texture"));
 		JsonObject->SetNumberField(TEXT("version"), 1);
 		JsonObject->SetStringField(TEXT("desc"), TEXT("Texture from TiX exporter."));
-		JsonObject->SetStringField(TEXT("source"), FullPathName + TEXT(".") + ExtName);
+		JsonObject->SetStringField(TEXT("source"), InTexture->GetName() + TEXT(".") + ExtName);
 		JsonObject->SetStringField(TEXT("texture_type"), TEXT("ETT_TEXTURE_2D"));
 		JsonObject->SetNumberField(TEXT("srgb"), InTexture->SRGB ? 1 : 0);
 
