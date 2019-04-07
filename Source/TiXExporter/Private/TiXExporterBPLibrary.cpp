@@ -30,6 +30,8 @@
 
 DEFINE_LOG_CATEGORY(LogTiXExporter);
 
+const FString ExtName = TEXT(".tasset");
+
 UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
 {
@@ -152,25 +154,25 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 			TArray< TSharedPtr<FJsonValue> > JTextures, JMaterialInstances, JMaterials, JMeshes;
 			for (const auto& Tex : Dependency.DependenciesTextures)
 			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Tex));
+				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Tex + ExtName));
 				JTextures.Add(JsonValue);
 			}
 			JDependency->SetArrayField(TEXT("textures"), JTextures);
-			for (const auto& MaterialInstance : Dependency.DependenciesMaterialInstances)
-			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(MaterialInstance));
-				JMaterialInstances.Add(JsonValue);
-			}
-			JDependency->SetArrayField(TEXT("material_instances"), JMaterialInstances);
 			for (const auto& Material : Dependency.DependenciesMaterials)
 			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Material));
+				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Material + ExtName));
 				JMaterials.Add(JsonValue);
 			}
 			JDependency->SetArrayField(TEXT("materials"), JMaterials);
+			for (const auto& MaterialInstance : Dependency.DependenciesMaterialInstances)
+			{
+				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(MaterialInstance + ExtName));
+				JMaterialInstances.Add(JsonValue);
+			}
+			JDependency->SetArrayField(TEXT("material_instances"), JMaterialInstances);
 			for (const auto& Mesh : Dependency.DependenciesMeshes)
 			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Mesh));
+				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Mesh + ExtName));
 				JMeshes.Add(JsonValue);
 			}
 			JDependency->SetArrayField(TEXT("meshes"), JMeshes);
@@ -401,7 +403,8 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		const int32 MinVertexIndex = MeshSection.MinVertexIndex;
 		const int32 MaxVertexIndex = MeshSection.MaxVertexIndex;
 		const int32 FirstIndex = MeshSection.FirstIndex;
-		FString MaterialName = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface->GetName();
+		FString MaterialInstancePathName = GetResourcePath(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface);
+		MaterialInstancePathName += StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface->GetName();
 		FString MaterialSlotName = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialSlotName.ToString();
 
 		ExportMaterialInstance(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface, InExportPath, Dependency);
@@ -461,7 +464,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 			}
 		}
 
-		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialSlotName, MaterialName, VsFormat);
+		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialSlotName, MaterialInstancePathName + ExtName, VsFormat);
 
 		TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
 		JsonSections.Add(JsonSectionValue);
@@ -653,7 +656,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh,
 			TArray< TSharedPtr<FJsonValue> > JsonSections;
 			for (int32 section = 0; section < MaterialSections.Num(); ++section)
 			{
-				TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(Vertices[section], Indices[section], Materials[section]->MaterialSlotName.ToString(), Materials[section]->MaterialInterface->GetName(), VsFormat);
+				TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(Vertices[section], Indices[section], Materials[section]->MaterialSlotName.ToString(), Materials[section]->MaterialInterface->GetName() + ExtName, VsFormat);
 
 				TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
 				JsonSections.Add(JsonSectionValue);
@@ -752,7 +755,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			JsonObject->SetStringField(TEXT("type"), TEXT("material_instance"));
 			JsonObject->SetNumberField(TEXT("version"), 1);
 			JsonObject->SetStringField(TEXT("desc"), TEXT("Material instance from TiX exporter."));
-			JsonObject->SetStringField(TEXT("linked_material"), MaterialPathName);
+			JsonObject->SetStringField(TEXT("linked_material"), MaterialPathName + ExtName);
 
 			// output parameters
 			TSharedPtr<FJsonObject> JParameters = MakeShareable(new FJsonObject);
@@ -772,7 +775,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			{
 				TSharedPtr<FJsonObject> JParameter = MakeShareable(new FJsonObject);
 				JParameter->SetStringField(TEXT("type"), TEXT("texture"));
-				JParameter->SetStringField(TEXT("value"), TextureParams[TexParam]);
+				JParameter->SetStringField(TEXT("value"), TextureParams[TexParam] + ExtName);
 
 				JParameters->SetObjectField(TextureParamNames[TexParam], JParameter);
 			}
