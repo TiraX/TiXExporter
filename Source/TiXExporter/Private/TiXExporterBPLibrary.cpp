@@ -928,6 +928,8 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		JsonObject->SetStringField(TEXT("source"), InTexture->GetName() + TEXT(".") + ExtName);
 		JsonObject->SetStringField(TEXT("texture_type"), TEXT("ETT_TEXTURE_2D"));
 		JsonObject->SetNumberField(TEXT("srgb"), InTexture->SRGB ? 1 : 0);
+		JsonObject->SetNumberField(TEXT("is_normalmap"), InTexture->LODGroup == TEXTUREGROUP_WorldNormalMap ? 1 : 0);
+		JsonObject->SetNumberField(TEXT("has_mips"), InTexture->MipGenSettings != TMGS_NoMipmaps ? 1 : 0);
 
 		FString AddressMode;
 		switch (InTexture2D->AddressX)
