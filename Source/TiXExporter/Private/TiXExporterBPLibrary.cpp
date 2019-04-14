@@ -792,11 +792,16 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 	Shaders.Add(TEXT(""));
 	Shaders.Add(TEXT(""));
 
+	// Fixed vertex format temp.
 	TArray<FString> VSFormats;
 	VSFormats.Add(TEXT("EVSSEG_POSITION"));
 	VSFormats.Add(TEXT("EVSSEG_NORMAL"));
 	VSFormats.Add(TEXT("EVSSEG_TEXCOORD0"));
 	VSFormats.Add(TEXT("EVSSEG_TANGENT"));
+
+	// Fixed instance format temp.
+	TArray<FString> InsFormats;
+	InsFormats.Add(TEXT("EINSSEG_TRANSFORM"));
 
 	TArray<FString> RTColors;
 	RTColors.Add(TEXT("EPF_RGBA16F"));
@@ -838,12 +843,14 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 		JsonObject->SetStringField(TEXT("desc"), TEXT("Material from TiX exporter."));
 
 		// material info
-		TArray< TSharedPtr<FJsonValue> > JShaders, JVSFormats, JRTColors;
+		TArray< TSharedPtr<FJsonValue> > JShaders, JVSFormats, JInsFormats, JRTColors;
 		ConvertToJsonArray(Shaders, JShaders);
 		ConvertToJsonArray(VSFormats, JVSFormats);
+		ConvertToJsonArray(InsFormats, JInsFormats);
 		ConvertToJsonArray(RTColors, JRTColors);
 		JsonObject->SetArrayField(TEXT("shaders"), JShaders);
 		JsonObject->SetArrayField(TEXT("vs_format"), JVSFormats);
+		JsonObject->SetArrayField(TEXT("ins_format"), JInsFormats);
 		JsonObject->SetArrayField(TEXT("rt_colors"), JRTColors);
 
 		JsonObject->SetStringField(TEXT("rt_depth"), RTDepth);
@@ -960,6 +967,11 @@ void UTiXExporterBPLibrary::ExportInstances(const UStaticMesh * InMesh, const TA
 	JsonObject->SetStringField(TEXT("desc"), DescStr);
 	JsonObject->SetStringField(TEXT("linked_mesh"), MeshPathName + ExtName);
 	JsonObject->SetNumberField(TEXT("count"), Instances.Num());
+
+
+	TArray< TSharedPtr<FJsonValue> > FormatArray;
+	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_TRANSFORM"))));
+	JsonObject->SetArrayField(TEXT("ins_format"), FormatArray);
 
 	TArray< TSharedPtr<FJsonValue> > JMeshInstances;
 	for (const auto& Instance : Instances)
