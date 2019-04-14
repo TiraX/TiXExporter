@@ -55,4 +55,5 @@ private:
 	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
 	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
 	static void ExportTexture(UTexture* InTexture, const FString& Path, FDependency& Dependency);
+	static void ExportInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances, const FString& InExportPath, const FString& InLevelName);
 };

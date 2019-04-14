@@ -180,45 +180,19 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 		}
 
 		// output meshes and instances
-		TArray< TSharedPtr<FJsonValue> > JsonMeshes;
+		TArray< TSharedPtr<FJsonValue> > JsonInstances;
 		int32 MeshIndex = 0;
 		for (const auto& MeshPair : ActorInstances)
 		{
 			const UStaticMesh * Mesh = MeshPair.Key;
-			FString MeshPathName = GetResourcePathName(Mesh);
 			const TArray<FTiXInstance>& Instances = MeshPair.Value;
+			ExportInstances(Mesh, Instances, ExportPath, CurrentWorld->GetName());
 
-			int32 IndexInDependency;
-			Dependency.DependenciesMeshes.Find(MeshPathName, IndexInDependency);
-			check(IndexInDependency == MeshIndex);
-			++MeshIndex;
-
-			// Mesh
-			TSharedPtr<FJsonObject> JMesh = MakeShareable(new FJsonObject);
-			JMesh->SetStringField(TEXT("name"), MeshPathName);
-
-			TArray< TSharedPtr<FJsonValue> > JMeshInstances;
-			for (const auto& Instance : Instances)
-			{
-				// Instance
-				TSharedPtr<FJsonObject> JInstance = MakeShareable(new FJsonObject);
-				TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
-				ConvertToJsonArray(Instance.Position, JPosition);
-				ConvertToJsonArray(Instance.Rotation, JRotation);
-				ConvertToJsonArray(Instance.Scale, JScale);
-				JInstance->SetArrayField(TEXT("position"), JPosition);
-				JInstance->SetArrayField(TEXT("rotation"), JRotation);
-				JInstance->SetArrayField(TEXT("scale"), JScale);
-
-				TSharedRef< FJsonValueObject > JsonInstance = MakeShareable(new FJsonValueObject(JInstance));
-				JMeshInstances.Add(JsonInstance);
-			}
-			JMesh->SetNumberField(TEXT("count"), Instances.Num());
-			JMesh->SetArrayField(TEXT("instances"), JMeshInstances);
-			TSharedRef< FJsonValueObject > JsonMesh = MakeShareable(new FJsonValueObject(JMesh));
-			JsonMeshes.Add(JsonMesh);
+			FString ExportPathName = CurrentWorld->GetName() + TEXT("/") + Mesh->GetName() + TEXT("_Ins") + ExtName;
+			TSharedRef< FJsonValueString > JMeshIns = MakeShareable(new FJsonValueString(ExportPathName));
+			JsonInstances.Add(JMeshIns);
 		}
-		JsonObject->SetArrayField(TEXT("scene"), JsonMeshes);
+		JsonObject->SetArrayField(TEXT("instances"), JsonInstances);
 
 		// output env
 		TSharedPtr<FJsonObject> JEnvironment = MakeShareable(new FJsonObject);
@@ -967,4 +941,43 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		JsonObject->SetNumberField(TEXT("lod_bias"), LodBias);
 		SaveJsonToFile(JsonObject, InTexture->GetName(), ExportFullPath);
 	}
+}
+
+void UTiXExporterBPLibrary::ExportInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances, const FString& InExportPath, const FString& InLevelName)
+{
+	FString ExportPath = InExportPath;
+	VerifyOrCreateDirectory(ExportPath);
+	ExportPath += InLevelName;
+	FString MeshPathName = GetResourcePathName(InMesh);
+
+	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+
+	// output basic info
+	JsonObject->SetStringField(TEXT("name"), InMesh->GetName() + TEXT("_Ins"));
+	JsonObject->SetStringField(TEXT("type"), TEXT("instances"));
+	JsonObject->SetNumberField(TEXT("version"), 1);
+	FString DescStr = FString::Printf(TEXT("Mesh instances in %s from TiX exporter."), *InLevelName);
+	JsonObject->SetStringField(TEXT("desc"), DescStr);
+	JsonObject->SetStringField(TEXT("linked_mesh"), MeshPathName + ExtName);
+	JsonObject->SetNumberField(TEXT("count"), Instances.Num());
+
+	TArray< TSharedPtr<FJsonValue> > JMeshInstances;
+	for (const auto& Instance : Instances)
+	{
+		// Instance
+		TSharedPtr<FJsonObject> JInstance = MakeShareable(new FJsonObject);
+		TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
+		ConvertToJsonArray(Instance.Position, JPosition);
+		ConvertToJsonArray(Instance.Rotation, JRotation);
+		ConvertToJsonArray(Instance.Scale, JScale);
+		JInstance->SetArrayField(TEXT("position"), JPosition);
+		JInstance->SetArrayField(TEXT("rotation"), JRotation);
+		JInstance->SetArrayField(TEXT("scale"), JScale);
+
+		TSharedRef< FJsonValueObject > JsonInstance = MakeShareable(new FJsonValueObject(JInstance));
+		JMeshInstances.Add(JsonInstance);
+	}
+	JsonObject->SetArrayField(TEXT("instances"), JMeshInstances);
+	
+	SaveJsonToFile(JsonObject, InMesh->GetName() + TEXT("_Ins"), ExportPath);
 }
