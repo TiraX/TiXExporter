@@ -14,6 +14,8 @@
 #include "Runtime/Landscape/Classes/LandscapeInfo.h"
 #include "Runtime/Engine/Classes/Engine/DirectionalLight.h"
 #include "Runtime/Engine/Classes/Components/LightComponent.h"
+#include "Runtime/Engine/Classes/Camera/CameraActor.h"
+#include "Runtime/Engine/Classes/Camera/CameraComponent.h"
 #include "Runtime/Engine/Classes/Materials/Material.h"
 #include "Runtime/Engine/Classes/Materials/MaterialInstance.h"
 #include "RawMesh.h"
@@ -193,6 +195,39 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 			JsonInstances.Add(JMeshIns);
 		}
 		JsonObject->SetArrayField(TEXT("instances"), JsonInstances);
+
+		// output cameras
+		TArray<AActor*> Cameras;
+		UGameplayStatics::GetAllActorsOfClass(Actor, ACameraActor::StaticClass(), Cameras);
+		if (Cameras.Num() > 0)
+		{
+			TArray< TSharedPtr<FJsonValue> > JCameras;
+			for (auto A : Cameras)
+			{
+				ACameraActor * Cam = Cast<ACameraActor>(A);
+				UCameraComponent * CamComp = Cam->GetCameraComponent();
+				TSharedPtr<FJsonObject> JCamera = MakeShareable(new FJsonObject);
+
+				FVector CamDir = CamComp->GetComponentToWorld().GetRotation().Vector();
+				CamDir.Normalize();
+				FVector CamLocation = CamComp->GetComponentToWorld().GetTranslation();
+				FVector CamTarget = CamLocation + CamDir * 100.f;
+
+				CamLocation *= MeshVertexPositionScale;
+				CamTarget *= MeshVertexPositionScale;
+
+				TArray< TSharedPtr<FJsonValue> > JLocation, JTarget;
+				ConvertToJsonArray(CamLocation, JLocation);
+				ConvertToJsonArray(CamTarget, JTarget);
+				JCamera->SetArrayField(TEXT("location"), JLocation);
+				JCamera->SetArrayField(TEXT("target"), JTarget);
+				JCamera->SetNumberField(TEXT("fov"), CamComp->FieldOfView);
+
+				TSharedRef< FJsonValueObject > JsonCamera = MakeShareable(new FJsonValueObject(JCamera));
+				JCameras.Add(JsonCamera);
+			}
+			JsonObject->SetArrayField(TEXT("cameras"), JCameras);
+		}
 
 		// output env
 		TSharedPtr<FJsonObject> JEnvironment = MakeShareable(new FJsonObject);
@@ -801,7 +836,10 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 
 	// Fixed instance format temp.
 	TArray<FString> InsFormats;
-	InsFormats.Add(TEXT("EINSSEG_TRANSFORM"));
+	InsFormats.Add(TEXT("EINSSEG_TRANSITION"));	// Transition
+	InsFormats.Add(TEXT("EINSSEG_ROT_SCALE_MAT0"));	// Rot and Scale Mat Row0
+	InsFormats.Add(TEXT("EINSSEG_ROT_SCALE_MAT1"));	// Rot and Scale Mat Row1
+	InsFormats.Add(TEXT("EINSSEG_ROT_SCALE_MAT2"));	// Rot and Scale Mat Row2
 
 	TArray<FString> RTColors;
 	RTColors.Add(TEXT("EPF_RGBA16F"));
@@ -970,7 +1008,10 @@ void UTiXExporterBPLibrary::ExportInstances(const UStaticMesh * InMesh, const TA
 
 
 	TArray< TSharedPtr<FJsonValue> > FormatArray;
-	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_TRANSFORM"))));
+	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_TRANSITION"))));
+	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_ROT_SCALE_MAT0"))));
+	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_ROT_SCALE_MAT1"))));
+	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_ROT_SCALE_MAT2"))));
 	JsonObject->SetArrayField(TEXT("ins_format"), FormatArray);
 
 	TArray< TSharedPtr<FJsonValue> > JMeshInstances;
