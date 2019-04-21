@@ -18,6 +18,8 @@
 #include "Runtime/Engine/Classes/Camera/CameraComponent.h"
 #include "Runtime/Engine/Classes/Materials/Material.h"
 #include "Runtime/Engine/Classes/Materials/MaterialInstance.h"
+#include "Runtime/Engine/Classes/Engine/Texture2D.h"
+#include "Runtime/Engine/Classes/Engine/TextureCube.h"
 #include "RawMesh.h"
 #include "Dom/JsonValue.h"
 #include "Dom/JsonObject.h"
@@ -33,6 +35,7 @@
 DEFINE_LOG_CATEGORY(LogTiXExporter);
 
 const FString ExtName = TEXT(".tasset");
+const int32 MaxTextureSize = 1024;
 
 UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
@@ -342,7 +345,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshInternal(UStaticMesh * StaticMesh, F
 	}
 	else
 	{
-		UE_LOG(LogTiXExporter, Warning, TEXT("Exporting Static Mesh: %s to %s. Mesh do not have CPU Access, export from RawMesh"), *StaticMesh->GetName(), *ExportPath);
+		UE_LOG(LogTiXExporter, Error, TEXT("Exporting Static Mesh: %s to %s. Mesh do not have CPU Access, export from RawMesh"), *StaticMesh->GetName(), *ExportPath);
 		//ExportStaticMeshFromRawMesh(StaticMesh, ExportFullPath, Components, MeshVertexPositionScale, Dependency);
 	}
 }
@@ -743,6 +746,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 		// Texture parameters.
 		TArray<FString> TextureParams;
 		TArray<FString> TextureParamNames;
+		TArray<UTexture*> Textures;
 		for (int32 i = 0; i < MaterialInstance->TextureParameterValues.Num(); ++i)
 		{
 			const FTextureParameterValue& TextureValue = MaterialInstance->TextureParameterValues[i];
@@ -751,6 +755,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			TexturePath += TextureValue.ParameterValue->GetName();
 			TextureParams.Add(TexturePath);
 			TextureParamNames.Add(TextureValue.ParameterInfo.Name.ToString());
+			Textures.Add(TextureValue.ParameterValue);
 
 			ExportTexture(TextureValue.ParameterValue, InExportPath, Dependency);
 		}
@@ -783,8 +788,42 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			for (int32 TexParam = 0; TexParam < TextureParams.Num(); ++TexParam)
 			{
 				TSharedPtr<FJsonObject> JParameter = MakeShareable(new FJsonObject);
-				JParameter->SetStringField(TEXT("type"), TEXT("texture"));
+				// Texture type
+				FVector2D Resolution;
+				if (Textures[TexParam]->IsA(UTexture2D::StaticClass()))
+				{
+					JParameter->SetStringField(TEXT("type"), TEXT("texture2d"));
+					UTexture2D * Tex2D = Cast<UTexture2D>(Textures[TexParam]);
+					Resolution.X = Tex2D->GetSizeX() >> Tex2D->LODBias;
+					Resolution.Y = Tex2D->GetSizeY() >> Tex2D->LODBias;
+					if (Resolution.X > MaxTextureSize)
+						Resolution.X = MaxTextureSize;
+					if (Resolution.Y > MaxTextureSize)
+						Resolution.Y = MaxTextureSize;
+				}
+				else if (Textures[TexParam]->IsA(UTextureCube::StaticClass()))
+				{
+					JParameter->SetStringField(TEXT("type"), TEXT("texturecube"));
+					UTextureCube * TexCube = Cast<UTextureCube>(Textures[TexParam]);
+					Resolution.X = TexCube->GetSizeX();
+					Resolution.Y = TexCube->GetSizeY();
+					Resolution.X = TexCube->GetSizeX() >> TexCube->LODBias;
+					Resolution.Y = TexCube->GetSizeY() >> TexCube->LODBias;
+					if (Resolution.X > MaxTextureSize)
+						Resolution.X = MaxTextureSize;
+					if (Resolution.Y > MaxTextureSize)
+						Resolution.Y = MaxTextureSize;
+				}
+				else
+				{
+					UE_LOG(LogTiXExporter, Error, TEXT("Unsupport texture type other than 2D and Cube. %s"), *TextureParams[TexParam]);
+				}
+				// Texture name
 				JParameter->SetStringField(TEXT("value"), TextureParams[TexParam] + ExtName);
+				// Texture resolution for virtual texture usage
+				TArray< TSharedPtr<FJsonValue> > JResolution;
+				ConvertToJsonArray(Resolution, JResolution);
+				JParameter->SetArrayField(TEXT("size"), JResolution);
 
 				JParameters->SetObjectField(TextureParamNames[TexParam], JParameter);
 			}
@@ -973,8 +1012,6 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		{
 			UE_LOG(LogTiXExporter, Warning, TEXT("%s size is not Power of Two. %d, %d."), *InTexture->GetName(), InTexture2D->GetSizeX(), InTexture2D->GetSizeY());
 		}
-
-		const int32 MaxTextureSize = 1024;
 
 		int32 LodBias = 0;
 		if (InTexture2D->GetSizeX() > MaxTextureSize)
