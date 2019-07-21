@@ -215,16 +215,20 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 				CamDir.Normalize();
 				FVector CamLocation = CamComp->GetComponentToWorld().GetTranslation();
 				FVector CamTarget = CamLocation + CamDir * 100.f;
+				FRotator CamRot = CamComp->GetComponentToWorld().GetRotation().Rotator();
 
 				CamLocation *= MeshVertexPositionScale;
 				CamTarget *= MeshVertexPositionScale;
 
-				TArray< TSharedPtr<FJsonValue> > JLocation, JTarget;
+				TArray< TSharedPtr<FJsonValue> > JLocation, JTarget, JRotator;
 				ConvertToJsonArray(CamLocation, JLocation);
 				ConvertToJsonArray(CamTarget, JTarget);
+				ConvertToJsonArray(CamRot, JRotator);
 				JCamera->SetArrayField(TEXT("location"), JLocation);
 				JCamera->SetArrayField(TEXT("target"), JTarget);
+				JCamera->SetArrayField(TEXT("rotator"), JRotator);
 				JCamera->SetNumberField(TEXT("fov"), CamComp->FieldOfView);
+				JCamera->SetNumberField(TEXT("aspect"), CamComp->AspectRatio);
 
 				TSharedRef< FJsonValueObject > JsonCamera = MakeShareable(new FJsonValueObject(JCamera));
 				JCameras.Add(JsonCamera);

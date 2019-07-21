@@ -116,6 +116,17 @@ void ConvertToJsonArray(const FVector4& Vector4Value, TArray< TSharedPtr<FJsonVa
 	OutArray.Add(JsonValueW);
 }
 
+void ConvertToJsonArray(const FRotator& RotatorValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	TSharedRef< FJsonValueNumber > JsonValuePitch = MakeShareable(new FJsonValueNumber(RotatorValue.Pitch));
+	TSharedRef< FJsonValueNumber > JsonValueYaw = MakeShareable(new FJsonValueNumber(RotatorValue.Yaw));
+	TSharedRef< FJsonValueNumber > JsonValueRoll = MakeShareable(new FJsonValueNumber(RotatorValue.Roll));
+
+	OutArray.Add(JsonValuePitch);
+	OutArray.Add(JsonValueYaw);
+	OutArray.Add(JsonValueRoll);
+}
+
 void ConvertToJsonArray(const TArray<int32>& IntArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	for (const auto& v : IntArray)
