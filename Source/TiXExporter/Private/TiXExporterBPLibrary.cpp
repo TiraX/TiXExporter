@@ -1017,13 +1017,7 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 			UE_LOG(LogTiXExporter, Warning, TEXT("%s size is not Power of Two. %d, %d."), *InTexture->GetName(), InTexture2D->GetSizeX(), InTexture2D->GetSizeY());
 		}
 
-		int32 LodBias = 0;
-		if (InTexture2D->GetSizeX() > MaxTextureSize)
-		{
-			uint32 X = FMath::FloorLog2(InTexture2D->GetSizeX());
-			uint32 Y = 10;
-			LodBias = X - Y;
-		}
+		int32 LodBias = InTexture->LODBias;
 		JsonObject->SetNumberField(TEXT("lod_bias"), LodBias);
 		SaveJsonToFile(JsonObject, InTexture->GetName(), ExportFullPath);
 	}
