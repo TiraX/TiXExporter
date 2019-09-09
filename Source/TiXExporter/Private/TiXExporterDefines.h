@@ -52,3 +52,18 @@ struct FDependency
 	TArray<FString> DependenciesMaterials;
 	TArray<FString> DependenciesTextures;
 };
+
+struct FTiXSceneTile
+{
+	FVector2D Position;
+	float TileSize;
+	int32 MeshCount;
+	int32 InstanceCount;
+	FBoxSphereBounds BBox;
+
+	TMap<UStaticMesh*, TArray<FTiXInstance> > TileInstances;
+
+	FTiXSceneTile()
+		: TileSize(0.f)
+	{}
+};

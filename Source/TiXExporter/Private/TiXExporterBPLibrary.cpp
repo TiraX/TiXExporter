@@ -37,12 +37,24 @@ DEFINE_LOG_CATEGORY(LogTiXExporter);
 const FString ExtName = TEXT(".tasset");
 const int32 MaxTextureSize = 1024;
 
+inline FIntPoint GetPointByPosition(const FVector& Position, float TileSize)
+{
+	check(0);
+	return FIntPoint();
+}
+
 UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
 {
 }
 
-void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& ExportPath, const TArray<FString>& SceneComponents, const TArray<FString>& MeshComponents, float MeshVertexPositionScale)
+void UTiXExporterBPLibrary::ExportCurrentScene(
+	AActor * Actor, 
+	const FString& ExportPath, 
+	const TArray<FString>& SceneComponents, 
+	const TArray<FString>& MeshComponents, 
+	float TileSize, 
+	float MeshVertexPositionScale)
 {
 	UWorld * CurrentWorld = Actor->GetWorld();
 	ULevel * CurrentLevel = CurrentWorld->GetCurrentLevel();
@@ -138,6 +150,23 @@ void UTiXExporterBPLibrary::ExportCurrentScene(AActor * Actor, const FString& Ex
 
 		UE_LOG(LogTiXExporter, Log, TEXT("  %s : %d instances."), *MeshName, Instances.Num());
 		NumInstances += Instances.Num();
+	}
+
+	// Sort mesh into scene tiles
+	TMap< FIntPoint, FTiXSceneTile *> Tiles;
+	for (const auto& MeshPair : ActorInstances)
+	{
+		const UStaticMesh * Mesh = MeshPair.Key;
+		const TArray<FTiXInstance>& Instances = MeshPair.Value;
+
+		FString ExportPathName = CurrentWorld->GetName() + TEXT("/") + Mesh->GetName() + TEXT("_Ins") + ExtName;
+		for (const auto& Ins : Instances)
+		{
+			FIntPoint InsPoint = GetPointByPosition(Ins.Position, TileSize);
+			FTiXSceneTile * Tile = Tiles.FindOrAdd(InsPoint);
+			TArray<FTiXInstance>& TileInstances = Tile->TileInstances.FindOrAdd(Mesh);
+			TileInstances.Add(Ins);
+		}
 	}
 
 	// output json

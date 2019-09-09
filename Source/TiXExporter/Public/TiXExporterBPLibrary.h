@@ -33,7 +33,7 @@ class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
 
 public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Current Scene", Keywords = "TiX Export Current Scene"), Category = "TiXExporter")
-	static void ExportCurrentScene(AActor * Actor, const FString& ExportPath, const TArray<FString>& SceneComponents, const TArray<FString>& MeshComponents, float MeshVertexPositionScale = 1.f);
+	static void ExportCurrentScene(AActor * Actor, const FString& ExportPath, const TArray<FString>& SceneComponents, const TArray<FString>& MeshComponents, float TileSize, float MeshVertexPositionScale = 1.f);
 
 	/** Export static mesh.
 	Param: Components should be combine of one or more in "POSITION, NORMAL, COLOR, TEXCOORD0, TEXCOORD1, TANGENT, BLENDINDEX, BLENDWEIGHT".
