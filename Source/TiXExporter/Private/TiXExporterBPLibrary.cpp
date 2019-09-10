@@ -61,6 +61,14 @@ inline FIntPoint GetPointByPosition(const FVector& Position, float TileSize)
 {
 	float X = Position.X / TileSize;
 	float Y = Position.Y / TileSize;
+	if (X < 0.f)
+	{
+		X -= 1.f;
+	}
+	if (Y < 1.f)
+	{
+		Y -= 1.f;
+	}
 	return FIntPoint(int32(X), int32(Y));
 }
 
@@ -1091,9 +1099,11 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	JsonObject->SetNumberField(TEXT("version"), 1);
 	JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles information from TiX exporter."));
 
-	TArray< TSharedPtr<FJsonValue> > JPosition;
+	TArray< TSharedPtr<FJsonValue> > JPosition, JBBox;
 	ConvertToJsonArray(SceneTile.Position, JPosition);
+	ConvertToJsonArray(SceneTile.BBox, JBBox);
 	JsonObject->SetArrayField(TEXT("position"), JPosition);
+	JsonObject->SetArrayField(TEXT("bbox"), JBBox);
 
 	JsonObject->SetNumberField(TEXT("mesh_total"), SceneTile.TileInstances.Num());
 	JsonObject->SetNumberField(TEXT("instances_total"), SceneTile.InstanceCount);

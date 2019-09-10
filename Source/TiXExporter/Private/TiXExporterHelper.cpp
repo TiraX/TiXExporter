@@ -136,6 +136,12 @@ void ConvertToJsonArray(const FRotator& RotatorValue, TArray< TSharedPtr<FJsonVa
 	OutArray.Add(JsonValueRoll);
 }
 
+void ConvertToJsonArray(const FBox& BoxValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	ConvertToJsonArray(BoxValue.Min, OutArray);
+	ConvertToJsonArray(BoxValue.Max, OutArray);
+}
+
 void ConvertToJsonArray(const TArray<int32>& IntArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	for (const auto& v : IntArray)
