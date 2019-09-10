@@ -3,6 +3,19 @@
 #pragma once
 #include "CoreMinimal.h"
 
+struct FTiXExporterSetting
+{
+	float TileSize;
+	float MeshVertexPositionScale;
+	bool bIgnoreMaterial;
+
+	FTiXExporterSetting()
+		: TileSize(16.f)
+		, MeshVertexPositionScale(0.01f)
+		, bIgnoreMaterial(false)
+	{}
+};
+
 static const int32 MAX_TIX_TEXTURE_COORDS = 2;
 enum E_VERTEX_STREAM_SEGMENT
 {
@@ -55,15 +68,16 @@ struct FDependency
 
 struct FTiXSceneTile
 {
-	FVector2D Position;
+	FIntPoint Position;
 	float TileSize;
-	int32 MeshCount;
 	int32 InstanceCount;
-	FBoxSphereBounds BBox;
+	FBox BBox;
 
 	TMap<UStaticMesh*, TArray<FTiXInstance> > TileInstances;
 
 	FTiXSceneTile()
 		: TileSize(0.f)
+		, InstanceCount(0)
+		, BBox(ForceInit)
 	{}
 };

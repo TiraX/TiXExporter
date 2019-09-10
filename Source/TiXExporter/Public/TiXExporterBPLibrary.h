@@ -33,27 +33,41 @@ class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
 
 public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Current Scene", Keywords = "TiX Export Current Scene"), Category = "TiXExporter")
-	static void ExportCurrentScene(AActor * Actor, const FString& ExportPath, const TArray<FString>& SceneComponents, const TArray<FString>& MeshComponents, float TileSize, float MeshVertexPositionScale = 1.f);
+	static void ExportCurrentScene(AActor * Actor, const FString& ExportPath, const TArray<FString>& SceneComponents, const TArray<FString>& MeshComponents);
 
 	/** Export static mesh.
 	Param: Components should be combine of one or more in "POSITION, NORMAL, COLOR, TEXCOORD0, TEXCOORD1, TANGENT, BLENDINDEX, BLENDWEIGHT".
 	*/
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Static Mesh Actor", Keywords = "TiX Export Static Mesh Actor"), Category = "TiXExporter")
-	static void ExportStaticMeshActor(AStaticMeshActor * StaticMeshActor, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale = 1.f);
+	static void ExportStaticMeshActor(AStaticMeshActor * StaticMeshActor, FString ExportPath, const TArray<FString>& Components);
 
 	/** Export static mesh. 
 		Param: Components should be combine of one or more in "POSITION, NORMAL, COLOR, TEXCOORD0, TEXCOORD1, TANGENT, BLENDINDEX, BLENDWEIGHT".
 	*/
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Static Mesh", Keywords = "TiX Export Static Mesh"), Category = "TiXExporter")
-	static void ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale);
+	static void ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components);
+
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Tile Size", Keywords = "TiX Set Tile Size"), Category = "TiXExporter")
+	static void SetTileSize(float TileSize);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Mesh Vertex Position Scale", Keywords = "TiX Set Mesh Vertex Position Scale"), Category = "TiXExporter")
+	static void SetMeshVertexPositionScale(float MeshVertexPositionScale);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Ignore Material", Keywords = "TiX Set Ignore Material"), Category = "TiXExporter")
+	static void SetIgnoreMaterial(bool bIgnore);
 
 private:
-	static void ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency);
+	static void ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components);
 
-	static void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency);
-	static void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency);
-	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
-	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path, FDependency& Dependency);
-	static void ExportTexture(UTexture* InTexture, const FString& Path, FDependency& Dependency);
-	static void ExportInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances, const FString& InExportPath, const FString& InLevelName);
+	static void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components);
+	static void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components);
+	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path);
+	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path);
+	static void ExportTexture(UTexture* InTexture, const FString& Path);
+
+	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
+	static void ExportSceneTile(const FTiXSceneTile& SceneTile, const FString& WorldName, const FString& InExportName);
+
+	static void GetStaticMeshDependency(const UStaticMesh * StaticMesh, const FString& InExportPath, FDependency& Dependency);
 };

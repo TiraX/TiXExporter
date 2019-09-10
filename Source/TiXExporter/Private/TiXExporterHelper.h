@@ -12,6 +12,7 @@
 
 bool VerifyOrCreateDirectory(FString& TargetDir);
 
+void ConvertToJsonArray(const FIntPoint& IntPointValue, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const FVector2D& VectorValue, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const FVector& VectorValue, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const FQuat& QuatValue, TArray< TSharedPtr<FJsonValue> >& OutArray);
@@ -40,3 +41,4 @@ inline uint32 GetTypeHash(const FTiXVertex& Vertex)
 
 FString GetResourcePath(const UObject * Resource);
 FString GetResourcePathName(const UObject * Resource);
+FString CombineResourceExportPath(const UObject * Resource, const FString& InExportPath);

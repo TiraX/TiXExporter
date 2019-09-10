@@ -70,6 +70,15 @@ bool VerifyOrCreateDirectory(FString& TargetDir)
 	return true;
 }
 
+void ConvertToJsonArray(const FIntPoint& IntPointValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(IntPointValue.X));
+	TSharedRef< FJsonValueNumber > JsonValueY = MakeShareable(new FJsonValueNumber(IntPointValue.Y));
+
+	OutArray.Add(JsonValueX);
+	OutArray.Add(JsonValueY);
+}
+
 void ConvertToJsonArray(const FVector2D& VectorValue, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	TSharedRef< FJsonValueNumber > JsonValueX = MakeShareable(new FJsonValueNumber(VectorValue.X));
@@ -291,6 +300,19 @@ FString GetResourcePath(const UObject * Resource)
 FString GetResourcePathName(const UObject * Resource)
 {
 	return GetResourcePath(Resource) + Resource->GetName();
+}
+
+FString CombineResourceExportPath(const UObject * Resource, const FString& InExportPath)
+{
+	FString Path = GetResourcePath(Resource);
+	FString ExportPath = InExportPath;
+	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (ExportPath[ExportPath.Len() - 1] != '/')
+		ExportPath.AppendChar('/');
+	FString ExportFullPath = ExportPath + Path;
+
+	FString FullPathName = Path + Resource->GetName();
+	return FullPathName;
 }
 
 TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& SectionName, const FString& MaterialInstanceName, int32 VsFormat)

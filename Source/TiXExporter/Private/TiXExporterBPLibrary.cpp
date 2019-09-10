@@ -34,13 +34,34 @@
 
 DEFINE_LOG_CATEGORY(LogTiXExporter);
 
+
+static FTiXExporterSetting TiXExporterSetting;
+
+
+void UTiXExporterBPLibrary::SetTileSize(float TileSize)
+{
+	TiXExporterSetting.TileSize = TileSize;
+}
+
+void UTiXExporterBPLibrary::SetMeshVertexPositionScale(float MeshVertexPositionScale)
+{
+	TiXExporterSetting.MeshVertexPositionScale = MeshVertexPositionScale;
+}
+
+void UTiXExporterBPLibrary::SetIgnoreMaterial(bool bIgnore)
+{
+	TiXExporterSetting.bIgnoreMaterial = bIgnore;
+}
+
+
 const FString ExtName = TEXT(".tasset");
 const int32 MaxTextureSize = 1024;
 
 inline FIntPoint GetPointByPosition(const FVector& Position, float TileSize)
 {
-	check(0);
-	return FIntPoint();
+	float X = Position.X / TileSize;
+	float Y = Position.Y / TileSize;
+	return FIntPoint(int32(X), int32(Y));
 }
 
 UTiXExporterBPLibrary::UTiXExporterBPLibrary(const FObjectInitializer& ObjectInitializer)
@@ -52,9 +73,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	AActor * Actor, 
 	const FString& ExportPath, 
 	const TArray<FString>& SceneComponents, 
-	const TArray<FString>& MeshComponents, 
-	float TileSize, 
-	float MeshVertexPositionScale)
+	const TArray<FString>& MeshComponents)
 {
 	UWorld * CurrentWorld = Actor->GetWorld();
 	ULevel * CurrentLevel = CurrentWorld->GetCurrentLevel();
@@ -64,7 +83,6 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	TArray<AActor*> Actors;
 	int32 a = 0;
 	UE_LOG(LogTiXExporter, Log, TEXT("Export tix scene ..."));
-	FDependency Dependency;
 
 	if (ContainComponent(SceneComponents, TEXT("STATIC_MESH")))
 	{
@@ -78,7 +96,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 			TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
 			FTiXInstance InstanceInfo;
-			InstanceInfo.Position = SMActor->GetTransform().GetLocation() * MeshVertexPositionScale;
+			InstanceInfo.Position = SMActor->GetTransform().GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
 			InstanceInfo.Rotation = SMActor->GetTransform().GetRotation();
 			InstanceInfo.Scale = SMActor->GetTransform().GetScale3D();
 			Instances.Add(InstanceInfo);
@@ -119,7 +137,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 				{
 					FTransform MeshTransform = FTransform(MeshMatrix.Transform);
 					FTiXInstance InstanceInfo;
-					InstanceInfo.Position = MeshTransform.GetLocation() * MeshVertexPositionScale;
+					InstanceInfo.Position = MeshTransform.GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
 					InstanceInfo.Rotation = MeshTransform.GetRotation();
 					InstanceInfo.Scale = MeshTransform.GetScale3D();
 					Instances.Add(InstanceInfo);
@@ -136,7 +154,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		for (auto& MeshPair : ActorInstances)
 		{
 			UStaticMesh * Mesh = MeshPair.Key;
-			ExportStaticMeshInternal(Mesh, ExportPath, MeshComponents, MeshVertexPositionScale, Dependency);
+			ExportStaticMeshInternal(Mesh, ExportPath, MeshComponents);
 		}
 	}
 	
@@ -153,19 +171,38 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	}
 
 	// Sort mesh into scene tiles
-	TMap< FIntPoint, FTiXSceneTile *> Tiles;
+	TMap< FIntPoint, FTiXSceneTile> Tiles;
 	for (const auto& MeshPair : ActorInstances)
 	{
-		const UStaticMesh * Mesh = MeshPair.Key;
+		UStaticMesh * Mesh = MeshPair.Key;
 		const TArray<FTiXInstance>& Instances = MeshPair.Value;
 
-		FString ExportPathName = CurrentWorld->GetName() + TEXT("/") + Mesh->GetName() + TEXT("_Ins") + ExtName;
 		for (const auto& Ins : Instances)
 		{
-			FIntPoint InsPoint = GetPointByPosition(Ins.Position, TileSize);
-			FTiXSceneTile * Tile = Tiles.FindOrAdd(InsPoint);
-			TArray<FTiXInstance>& TileInstances = Tile->TileInstances.FindOrAdd(Mesh);
+			FIntPoint InsPoint = GetPointByPosition(Ins.Position, TiXExporterSetting.TileSize);
+			FTiXSceneTile& Tile = Tiles.FindOrAdd(InsPoint);
+
+			Tile.Position = InsPoint;
+			Tile.TileSize = TiXExporterSetting.TileSize;
+
+			// Add instances
+			TArray<FTiXInstance>& TileInstances = Tile.TileInstances.FindOrAdd(Mesh);
 			TileInstances.Add(Ins);
+
+			// Add instances count
+			++Tile.InstanceCount;
+
+			// Recalc bounding box of this tile
+			const FBox& MeshBBox = Mesh->GetBoundingBox();
+			FBox TranslatedBox = FBox(MeshBBox.Min + Ins.Position, MeshBBox.Max + Ins.Position);
+			if (Tile.BBox.Min == FVector::ZeroVector && Tile.BBox.Max == FVector::ZeroVector)
+			{
+				Tile.BBox = TranslatedBox;
+			}
+			else
+			{
+				Tile.BBox += TranslatedBox;
+			}
 		}
 	}
 
@@ -177,56 +214,10 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		JsonObject->SetStringField(TEXT("name"), CurrentWorld->GetName());
 		JsonObject->SetStringField(TEXT("type"), TEXT("scene"));
 		JsonObject->SetNumberField(TEXT("version"), 1);
-		JsonObject->SetStringField(TEXT("desc"), TEXT("Scene information from TiX exporter."));
+		JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles information from TiX exporter."));
 		JsonObject->SetNumberField(TEXT("mesh_total"), ActorInstances.Num());
 		JsonObject->SetNumberField(TEXT("instances_total"), NumInstances);
 		JsonObject->SetStringField(TEXT("texture_total"), TEXT("Unknown Yet"));
-
-		// output dependencies
-		{
-			TSharedPtr<FJsonObject> JDependency = MakeShareable(new FJsonObject);
-			TArray< TSharedPtr<FJsonValue> > JTextures, JMaterialInstances, JMaterials, JMeshes;
-			for (const auto& Tex : Dependency.DependenciesTextures)
-			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Tex + ExtName));
-				JTextures.Add(JsonValue);
-			}
-			JDependency->SetArrayField(TEXT("textures"), JTextures);
-			for (const auto& Material : Dependency.DependenciesMaterials)
-			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Material + ExtName));
-				JMaterials.Add(JsonValue);
-			}
-			JDependency->SetArrayField(TEXT("materials"), JMaterials);
-			for (const auto& MaterialInstance : Dependency.DependenciesMaterialInstances)
-			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(MaterialInstance + ExtName));
-				JMaterialInstances.Add(JsonValue);
-			}
-			JDependency->SetArrayField(TEXT("material_instances"), JMaterialInstances);
-			for (const auto& Mesh : Dependency.DependenciesMeshes)
-			{
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Mesh + ExtName));
-				JMeshes.Add(JsonValue);
-			}
-			JDependency->SetArrayField(TEXT("meshes"), JMeshes);
-			JsonObject->SetObjectField(TEXT("dependency"), JDependency);
-		}
-
-		// output meshes and instances
-		TArray< TSharedPtr<FJsonValue> > JsonInstances;
-		int32 MeshIndex = 0;
-		for (const auto& MeshPair : ActorInstances)
-		{
-			const UStaticMesh * Mesh = MeshPair.Key;
-			const TArray<FTiXInstance>& Instances = MeshPair.Value;
-			ExportInstances(Mesh, Instances, ExportPath, CurrentWorld->GetName());
-
-			FString ExportPathName = CurrentWorld->GetName() + TEXT("/") + Mesh->GetName() + TEXT("_Ins") + ExtName;
-			TSharedRef< FJsonValueString > JMeshIns = MakeShareable(new FJsonValueString(ExportPathName));
-			JsonInstances.Add(JMeshIns);
-		}
-		JsonObject->SetArrayField(TEXT("instances"), JsonInstances);
 
 		// output cameras
 		TArray<AActor*> Cameras;
@@ -246,8 +237,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 				FVector CamTarget = CamLocation + CamDir * 100.f;
 				FRotator CamRot = CamComp->GetComponentToWorld().GetRotation().Rotator();
 
-				CamLocation *= MeshVertexPositionScale;
-				CamTarget *= MeshVertexPositionScale;
+				CamLocation *= TiXExporterSetting.MeshVertexPositionScale;
+				CamTarget *= TiXExporterSetting.MeshVertexPositionScale;
 
 				TArray< TSharedPtr<FJsonValue> > JLocation, JTarget, JRotator;
 				ConvertToJsonArray(CamLocation, JLocation);
@@ -310,7 +301,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 					JLandscape->SetStringField(TEXT("name"), LandscapeName);
 
 					TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
-					ConvertToJsonArray(LandscapeActor->GetTransform().GetLocation() * MeshVertexPositionScale, JPosition);
+					ConvertToJsonArray(LandscapeActor->GetTransform().GetLocation() * TiXExporterSetting.MeshVertexPositionScale, JPosition);
 					ConvertToJsonArray(LandscapeActor->GetTransform().GetRotation(), JRotation);
 					ConvertToJsonArray(LandscapeActor->GetTransform().GetScale3D(), JScale);
 					JLandscape->SetArrayField(TEXT("position"), JPosition);
@@ -353,36 +344,54 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			}
 		}
 
+		// Output tiles
+		{
+			// Output tile refs to scene
+			TArray< TSharedPtr<FJsonValue> > JTiles;
+			for (const auto& Tile : Tiles)
+			{
+				const FIntPoint& TilePos = Tile.Key;
+				const FTiXSceneTile& SceneTile = Tile.Value;
+
+				ExportSceneTile(SceneTile, CurrentWorld->GetName(), ExportPath);
+
+				FString TilePathName = FString::Printf(TEXT("%s/t%d_%d.tasset"), *CurrentWorld->GetName(), TilePos.X, TilePos.Y);
+				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(TilePathName));
+				JTiles.Add(JsonValue);
+			}
+			JsonObject->SetArrayField(TEXT("tiles"), JTiles);
+		}
+
+
 		SaveJsonToFile(JsonObject, CurrentWorld->GetName(), ExportPath);
 	}
 	ActorInstances.Empty();
 }
 
-void UTiXExporterBPLibrary::ExportStaticMeshActor(AStaticMeshActor * StaticMeshActor, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale)
+void UTiXExporterBPLibrary::ExportStaticMeshActor(AStaticMeshActor * StaticMeshActor, FString ExportPath, const TArray<FString>& Components)
 {
-	ExportStaticMesh(StaticMeshActor->GetStaticMeshComponent()->GetStaticMesh(), ExportPath, Components, MeshVertexPositionScale);
+	ExportStaticMesh(StaticMeshActor->GetStaticMeshComponent()->GetStaticMesh(), ExportPath, Components);
 }
 
-void UTiXExporterBPLibrary::ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale)
+void UTiXExporterBPLibrary::ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components)
 {
-	FDependency Dependency;
-	ExportStaticMeshInternal(StaticMesh, ExportPath, Components, MeshVertexPositionScale, Dependency);
+	ExportStaticMeshInternal(StaticMesh, ExportPath, Components);
 }
 
-void UTiXExporterBPLibrary::ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency)
+void UTiXExporterBPLibrary::ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components)
 {
 	if (StaticMesh->bAllowCPUAccess)
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT("Exporting Static Mesh: %s to %s."), *StaticMesh->GetName(), *ExportPath);
-		ExportStaticMeshFromRenderData(StaticMesh, ExportPath, Components, MeshVertexPositionScale, Dependency);
+		ExportStaticMeshFromRenderData(StaticMesh, ExportPath, Components);
 	}
 	else
 	{
 		UE_LOG(LogTiXExporter, Error, TEXT("Exporting Static Mesh: %s to %s. Mesh do not have CPU Access, export from RawMesh"), *StaticMesh->GetName(), *ExportPath);
-		//ExportStaticMeshFromRawMesh(StaticMesh, ExportFullPath, Components, MeshVertexPositionScale, Dependency);
+		//ExportStaticMeshFromRawMesh(StaticMesh, ExportFullPath, Components);
 	}
 }
-void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& InExportPath, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency)
+void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& InExportPath, const TArray<FString>& Components)
 {
 	FString SMPath = GetResourcePath(StaticMesh);
 	FString ExportPath = InExportPath;
@@ -390,9 +399,6 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 	if (ExportPath[ExportPath.Len() - 1] != '/')
 		ExportPath.AppendChar('/');
 	FString ExportFullPath = ExportPath + SMPath;
-
-	FString FullPathName = SMPath + StaticMesh->GetName();
-	Dependency.DependenciesMeshes.AddUnique(FullPathName);
 
 	const int32 TotalLODs = StaticMesh->RenderData->LODResources.Num();
 
@@ -448,11 +454,21 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		const int32 MinVertexIndex = MeshSection.MinVertexIndex;
 		const int32 MaxVertexIndex = MeshSection.MaxVertexIndex;
 		const int32 FirstIndex = MeshSection.FirstIndex;
-		FString MaterialInstancePathName = GetResourcePath(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface);
-		MaterialInstancePathName += StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface->GetName();
-		FString MaterialSlotName = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialSlotName.ToString();
 
-		ExportMaterialInstance(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface, InExportPath, Dependency);
+		FString MaterialInstancePathName, MaterialSlotName;
+
+		if (TiXExporterSetting.bIgnoreMaterial)
+		{
+			MaterialInstancePathName = TEXT("DebugMaterial");
+			MaterialSlotName = TEXT("DebugMaterialName");
+		}
+		else
+		{
+			MaterialInstancePathName = GetResourcePath(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface);
+			MaterialInstancePathName += StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface->GetName();
+			MaterialSlotName = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialSlotName.ToString();
+			ExportMaterialInstance(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface, InExportPath);
+		}
 
 		// data container
 		TArray<FTiXVertex> VertexSection;
@@ -465,7 +481,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		{
 			uint32 Index = MeshIndices[ii];
 			FTiXVertex Vertex;
-			Vertex.Position = PositionVertexBuffer.VertexPosition(Index) * MeshVertexPositionScale;
+			Vertex.Position = PositionVertexBuffer.VertexPosition(Index) * TiXExporterSetting.MeshVertexPositionScale;
 			if ((VsFormat & EVSSEG_NORMAL) != 0)
 			{
 				Vertex.Normal = StaticMeshVertexBuffer.VertexTangentZ(Index).GetSafeNormal();
@@ -536,7 +552,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 	}
 }
 
-void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components, float MeshVertexPositionScale, FDependency& Dependency)
+void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components)
 {
 	FMeshDescription* Description = StaticMesh->GetOriginalMeshDescription(0);
 	for (const auto& Model : StaticMesh->SourceModels)
@@ -637,7 +653,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh,
 			for (int32 i = 0; i < 3; ++i)
 			{
 				FTiXVertex Vertex;
-				Vertex.Position = MeshData.VertexPositions[MeshData.WedgeIndices[IndexOffset + i]] * MeshVertexPositionScale;
+				Vertex.Position = MeshData.VertexPositions[MeshData.WedgeIndices[IndexOffset + i]] * TiXExporterSetting.MeshVertexPositionScale;
 				Vertex.Normal = MeshData.WedgeTangentZ[IndexOffset + i];
 				if (MeshData.WedgeColors.Num() > 0)
 				{
@@ -713,11 +729,11 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh,
 	}
 }
 
-void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& InExportPath, FDependency& Dependency)
+void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& InExportPath)
 {
 	if (InMaterial->IsA(UMaterial::StaticClass()))
 	{
-		ExportMaterial(InMaterial, InExportPath, Dependency);
+		ExportMaterial(InMaterial, InExportPath);
 	}
 	else
 	{
@@ -731,20 +747,10 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			ExportPath.AppendChar('/');
 		FString ExportFullPath = ExportPath + Path;
 
-		FString FullPathName = Path + InMaterial->GetName();
-
-		// Use Dependency to check if this already exported.
-		if (Dependency.DependenciesMaterialInstances.Find(FullPathName) != INDEX_NONE)
-		{
-			return;
-		}
-
-		Dependency.DependenciesMaterialInstances.AddUnique(FullPathName);
-
 		// Linked Material
 		UMaterialInterface * ParentMaterial = MaterialInstance->Parent;
 		check(ParentMaterial && ParentMaterial->IsA(UMaterial::StaticClass()));
-		ExportMaterial(ParentMaterial, InExportPath, Dependency);
+		ExportMaterial(ParentMaterial, InExportPath);
 		FString MaterialPathName = GetResourcePath(ParentMaterial);
 		MaterialPathName += ParentMaterial->GetName();
 
@@ -790,7 +796,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			TextureParamNames.Add(TextureValue.ParameterInfo.Name.ToString());
 			Textures.Add(TextureValue.ParameterValue);
 
-			ExportTexture(TextureValue.ParameterValue, InExportPath, Dependency);
+			ExportTexture(TextureValue.ParameterValue, InExportPath);
 		}
 
 		// output json
@@ -866,7 +872,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 	}
 }
 
-void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const FString& InExportPath, FDependency& Dependency)
+void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const FString& InExportPath)
 {
 	check(InMaterial->IsA(UMaterial::StaticClass()));
 	UMaterial * Material = Cast<UMaterial>(InMaterial);
@@ -877,14 +883,6 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 	if (ExportPath[ExportPath.Len() - 1] != '/')
 		ExportPath.AppendChar('/');
 	FString ExportFullPath = ExportPath + Path;
-
-	FString FullPathName = Path + InMaterial->GetName();
-	// Use Dependency to check if this already exported.
-	if (Dependency.DependenciesMaterials.Find(FullPathName) != INDEX_NONE)
-	{
-		return;
-	}
-	Dependency.DependenciesMaterials.AddUnique(FullPathName);
 
 	// Material infos
 	const FString ShaderPrefix = TEXT("S_");
@@ -972,7 +970,7 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 	}
 }
 
-void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& InExportPath, FDependency& Dependency)
+void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& InExportPath)
 {
 	FString Path = GetResourcePath(InTexture);
 	FString ExportPath = InExportPath;
@@ -981,6 +979,7 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		ExportPath.AppendChar('/');
 	FString ExportFullPath = ExportPath + Path;
 
+	FString TgaExtName = TEXT("tga");
 	FString FullPathName = Path + InTexture->GetName();
 
 	if (!InTexture->IsA(UTexture2D::StaticClass()))
@@ -989,21 +988,12 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		return;
 	}
 
-	FString ExtName = TEXT("tga");
-	// Use Dependency to check if this already exported.
-	if (Dependency.DependenciesTextures.Find(FullPathName) != INDEX_NONE)
-	{
-		return;
-	}
-
-	Dependency.DependenciesTextures.AddUnique(FullPathName);
-
 	UTexture2D * InTexture2D = Cast<UTexture2D>(InTexture);
 	FBufferArchive Buffer;
-	UExporter::ExportToArchive(InTexture, nullptr, Buffer, *ExtName, 0);
+	UExporter::ExportToArchive(InTexture, nullptr, Buffer, *TgaExtName, 0);
 
 	VerifyOrCreateDirectory(ExportFullPath);
-	FString ExportFullPathName = ExportFullPath + InTexture->GetName() + TEXT(".") + ExtName;
+	FString ExportFullPathName = ExportFullPath + InTexture->GetName() + TEXT(".") + TgaExtName;
 	if (Buffer.Num() == 0 || !FFileHelper::SaveArrayToFile(Buffer, *ExportFullPathName))
 	{
 		UE_LOG(LogTiXExporter, Error, TEXT("Fail to save texture %s"), *FullPathName);
@@ -1019,7 +1009,7 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		JsonObject->SetStringField(TEXT("type"), TEXT("texture"));
 		JsonObject->SetNumberField(TEXT("version"), 1);
 		JsonObject->SetStringField(TEXT("desc"), TEXT("Texture from TiX exporter."));
-		JsonObject->SetStringField(TEXT("source"), InTexture->GetName() + TEXT(".") + ExtName);
+		JsonObject->SetStringField(TEXT("source"), InTexture->GetName() + TEXT(".") + TgaExtName);
 		JsonObject->SetStringField(TEXT("texture_type"), TEXT("ETT_TEXTURE_2D"));
 		JsonObject->SetNumberField(TEXT("srgb"), InTexture->SRGB ? 1 : 0);
 		JsonObject->SetNumberField(TEXT("is_normalmap"), InTexture->LODGroup == TEXTUREGROUP_WorldNormalMap ? 1 : 0);
@@ -1052,31 +1042,14 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 	}
 }
 
-void UTiXExporterBPLibrary::ExportInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances, const FString& InExportPath, const FString& InLevelName)
+TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances)
 {
-	FString ExportPath = InExportPath;
-	VerifyOrCreateDirectory(ExportPath);
-	ExportPath += InLevelName;
 	FString MeshPathName = GetResourcePathName(InMesh);
 
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
 
 	// output basic info
-	JsonObject->SetStringField(TEXT("name"), InMesh->GetName() + TEXT("_Ins"));
-	JsonObject->SetStringField(TEXT("type"), TEXT("instances"));
-	JsonObject->SetNumberField(TEXT("version"), 1);
-	FString DescStr = FString::Printf(TEXT("Mesh instances in %s from TiX exporter."), *InLevelName);
-	JsonObject->SetStringField(TEXT("desc"), DescStr);
 	JsonObject->SetStringField(TEXT("linked_mesh"), MeshPathName + ExtName);
-	JsonObject->SetNumberField(TEXT("count"), Instances.Num());
-
-
-	TArray< TSharedPtr<FJsonValue> > FormatArray;
-	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_TRANSITION"))));
-	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_ROT_SCALE_MAT0"))));
-	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_ROT_SCALE_MAT1"))));
-	FormatArray.Add(MakeShareable(new FJsonValueString(TEXT("EINSSEG_ROT_SCALE_MAT2"))));
-	JsonObject->SetArrayField(TEXT("ins_format"), FormatArray);
 
 	TArray< TSharedPtr<FJsonValue> > JMeshInstances;
 	for (const auto& Instance : Instances)
@@ -1096,5 +1069,138 @@ void UTiXExporterBPLibrary::ExportInstances(const UStaticMesh * InMesh, const TA
 	}
 	JsonObject->SetArrayField(TEXT("instances"), JMeshInstances);
 	
-	SaveJsonToFile(JsonObject, InMesh->GetName() + TEXT("_Ins"), ExportPath);
+	return JsonObject;
+}
+
+void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, const FString& WorldName, const FString& InExportPath)
+{
+	// Get dependencies
+	FDependency Dependency;
+	for (const auto& MeshIns : SceneTile.TileInstances)
+	{
+		const UStaticMesh * Mesh = MeshIns.Key;
+		GetStaticMeshDependency(Mesh, InExportPath, Dependency);
+	}
+
+	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+
+	// output basic info
+	FString TileName = FString::Printf(TEXT("t%d_%d"), SceneTile.Position.X, SceneTile.Position.Y);
+	JsonObject->SetStringField(TEXT("name"), WorldName + TEXT("_") + TileName);
+	JsonObject->SetStringField(TEXT("type"), TEXT("scene_tile"));
+	JsonObject->SetNumberField(TEXT("version"), 1);
+	JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles information from TiX exporter."));
+
+	TArray< TSharedPtr<FJsonValue> > JPosition;
+	ConvertToJsonArray(SceneTile.Position, JPosition);
+	JsonObject->SetArrayField(TEXT("position"), JPosition);
+
+	JsonObject->SetNumberField(TEXT("mesh_total"), SceneTile.TileInstances.Num());
+	JsonObject->SetNumberField(TEXT("instances_total"), SceneTile.InstanceCount);
+	JsonObject->SetNumberField(TEXT("texture_total"), Dependency.DependenciesTextures.Num());
+
+	// output dependencies
+	{
+		TSharedPtr<FJsonObject> JDependency = MakeShareable(new FJsonObject);
+		TArray< TSharedPtr<FJsonValue> > JTextures, JMaterialInstances, JMaterials, JMeshes;
+		for (const auto& Tex : Dependency.DependenciesTextures)
+		{
+			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Tex + ExtName));
+			JTextures.Add(JsonValue);
+		}
+		JDependency->SetArrayField(TEXT("textures"), JTextures);
+		for (const auto& Material : Dependency.DependenciesMaterials)
+		{
+			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Material + ExtName));
+			JMaterials.Add(JsonValue);
+		}
+		JDependency->SetArrayField(TEXT("materials"), JMaterials);
+		for (const auto& MaterialInstance : Dependency.DependenciesMaterialInstances)
+		{
+			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(MaterialInstance + ExtName));
+			JMaterialInstances.Add(JsonValue);
+		}
+		JDependency->SetArrayField(TEXT("material_instances"), JMaterialInstances);
+		for (const auto& Mesh : Dependency.DependenciesMeshes)
+		{
+			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Mesh + ExtName));
+			JMeshes.Add(JsonValue);
+		}
+		JDependency->SetArrayField(TEXT("meshes"), JMeshes);
+		JsonObject->SetObjectField(TEXT("dependency"), JDependency);
+	}
+
+	// Export mesh instances
+	{
+		TArray< TSharedPtr<FJsonValue> > JMeshInstances;
+		for (const auto& MeshIns : SceneTile.TileInstances)
+		{
+			const UStaticMesh * Mesh = MeshIns.Key;
+			const TArray< FTiXInstance>& Instances = MeshIns.Value;
+			TSharedPtr<FJsonObject> JIns = ExportMeshInstances(Mesh, Instances);
+			TSharedRef< FJsonValueObject > JsonValue = MakeShareable(new FJsonValueObject(JIns));
+			JMeshInstances.Add(JsonValue);
+		}
+		JsonObject->SetArrayField(TEXT("instances"), JMeshInstances);
+	}
+
+	FString FinalExportPath = InExportPath;
+	FinalExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (FinalExportPath[FinalExportPath.Len() - 1] != '/')
+		FinalExportPath.AppendChar('/');
+	FinalExportPath += WorldName + TEXT("/");
+
+	SaveJsonToFile(JsonObject, TileName, FinalExportPath);
+}
+
+void UTiXExporterBPLibrary::GetStaticMeshDependency(const UStaticMesh * StaticMesh, const FString& InExportPath, FDependency& Dependency)
+{
+	FString MeshPathName = CombineResourceExportPath(StaticMesh, InExportPath);
+	Dependency.DependenciesMeshes.AddUnique(MeshPathName);
+
+	if (TiXExporterSetting.bIgnoreMaterial)
+	{
+		// Ignore materials, do not output dependency
+		return;
+	}
+
+	// Add material instance
+	const int32 CurrentLOD = 0;
+	FStaticMeshLODResources& LODResource = StaticMesh->RenderData->LODResources[CurrentLOD];
+
+	for (int32 Section = 0; Section < LODResource.Sections.Num(); ++Section)
+	{
+		FStaticMeshSection& MeshSection = LODResource.Sections[Section];
+		UMaterialInterface* MaterialInterface = StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface;
+
+		if (MaterialInterface->IsA(UMaterial::StaticClass()))
+		{
+			// Materials
+			UMaterial * Material = Cast<UMaterial>(MaterialInterface);
+			FString MaterialPathName = CombineResourceExportPath(Material, InExportPath);
+			Dependency.DependenciesMaterials.AddUnique(MaterialPathName);
+		}
+		else
+		{
+			// Material instances
+			check(MaterialInterface->IsA(UMaterialInstance::StaticClass()));
+			UMaterialInstance * MaterialInstance = Cast<UMaterialInstance>(MaterialInterface);
+			FString MIPathName = CombineResourceExportPath(MaterialInstance, InExportPath);
+			Dependency.DependenciesMaterialInstances.AddUnique(MIPathName);
+
+			// Add textures
+			for (int32 i = 0; i < MaterialInstance->TextureParameterValues.Num(); ++i)
+			{
+				const FTextureParameterValue& TextureValue = MaterialInstance->TextureParameterValues[i];
+
+				UTexture * Texture = TextureValue.ParameterValue;
+				FString TexturePathName = CombineResourceExportPath(Texture, InExportPath);
+				if (!Texture->IsA(UTexture2D::StaticClass()))
+				{
+					continue;
+				}
+				Dependency.DependenciesTextures.AddUnique(TexturePathName);
+			}
+		}
+	}
 }
