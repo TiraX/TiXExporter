@@ -365,8 +365,11 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 				ExportSceneTile(SceneTile, CurrentWorld->GetName(), ExportPath);
 
-				FString TilePathName = FString::Printf(TEXT("%s/t%d_%d.tasset"), *CurrentWorld->GetName(), TilePos.X, TilePos.Y);
-				TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(TilePathName));
+				// Export tile point position
+				TArray< TSharedPtr<FJsonValue> > JPosition;
+				ConvertToJsonArray(TilePos, JPosition);
+				//FString TilePathName = FString::Printf(TEXT("%s/t%d_%d.tasset"), *CurrentWorld->GetName(), TilePos.X, TilePos.Y);
+				TSharedRef< FJsonValueArray > JsonValue = MakeShareable(new FJsonValueArray(JPosition));
 				JTiles.Add(JsonValue);
 			}
 			JsonObject->SetArrayField(TEXT("tiles"), JTiles);
@@ -1099,7 +1102,7 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	JsonObject->SetStringField(TEXT("name"), WorldName + TEXT("_") + TileName);
 	JsonObject->SetStringField(TEXT("type"), TEXT("scene_tile"));
 	JsonObject->SetNumberField(TEXT("version"), 1);
-	JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles information from TiX exporter."));
+	JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles contains mesh instance information from TiX exporter."));
 
 	TArray< TSharedPtr<FJsonValue> > JPosition, JBBox;
 	ConvertToJsonArray(SceneTile.Position, JPosition);
