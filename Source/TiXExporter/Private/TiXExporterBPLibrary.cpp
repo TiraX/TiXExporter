@@ -187,6 +187,12 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 		for (const auto& Ins : Instances)
 		{
+			if (FMath::IsNaN(Ins.Position.X) ||
+				FMath::IsNaN(Ins.Position.Y) ||
+				FMath::IsNaN(Ins.Position.Z))
+			{
+				continue;
+			}
 			FIntPoint InsPoint = GetPointByPosition(Ins.Position, TiXExporterSetting.TileSize);
 			FTiXSceneTile& Tile = Tiles.FindOrAdd(InsPoint);
 
@@ -1100,6 +1106,7 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	// output basic info
 	FString TileName = FString::Printf(TEXT("t%d_%d"), SceneTile.Position.X, SceneTile.Position.Y);
 	JsonObject->SetStringField(TEXT("name"), WorldName + TEXT("_") + TileName);
+	JsonObject->SetStringField(TEXT("level"), WorldName);
 	JsonObject->SetStringField(TEXT("type"), TEXT("scene_tile"));
 	JsonObject->SetNumberField(TEXT("version"), 1);
 	JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles contains mesh instance information from TiX exporter."));
