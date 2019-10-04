@@ -207,10 +207,10 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			++Tile.InstanceCount;
 
 			// Recalc bounding box of this tile
-			const FBox& MeshBBox = Mesh->GetBoundingBox();
+			FBox MeshBBox = Mesh->GetBoundingBox();
+			MeshBBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
+			MeshBBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
 			FBox TranslatedBox = FBox(MeshBBox.Min + Ins.Position, MeshBBox.Max + Ins.Position);
-			TranslatedBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
-			TranslatedBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
 			if (Tile.BBox.Min == FVector::ZeroVector && Tile.BBox.Max == FVector::ZeroVector)
 			{
 				Tile.BBox = TranslatedBox;
