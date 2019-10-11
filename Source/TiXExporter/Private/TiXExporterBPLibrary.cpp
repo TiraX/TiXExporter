@@ -1070,6 +1070,11 @@ TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshInstances(const UStatic
 	// output basic info
 	JsonObject->SetStringField(TEXT("linked_mesh"), MeshPathName + ExtName);
 
+	// only care about LOD 0 for now
+	int32 CurrentLOD = 0;
+	FStaticMeshLODResources& LODResource = InMesh->RenderData->LODResources[CurrentLOD];
+	JsonObject->SetNumberField(TEXT("mesh_sections"), LODResource.Sections.Num());
+
 	TArray< TSharedPtr<FJsonValue> > JMeshInstances;
 	for (const auto& Instance : Instances)
 	{
