@@ -1122,7 +1122,18 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	JsonObject->SetArrayField(TEXT("position"), JPosition);
 	JsonObject->SetArrayField(TEXT("bbox"), JBBox);
 
-	JsonObject->SetNumberField(TEXT("mesh_total"), SceneTile.TileInstances.Num());
+	// Calculate total mesh sections
+	int32 TotalMeshSections = 0;
+	const int32 CurrentLOD = 0;
+	for (const auto& MeshIns : SceneTile.TileInstances)
+	{
+		const UStaticMesh * Mesh = MeshIns.Key;
+		FStaticMeshLODResources& LODResource = Mesh->RenderData->LODResources[CurrentLOD];
+		TotalMeshSections += LODResource.Sections.Num();
+	}
+
+	JsonObject->SetNumberField(TEXT("meshes_total"), SceneTile.TileInstances.Num());
+	JsonObject->SetNumberField(TEXT("mesh_sections_total"), TotalMeshSections);
 	JsonObject->SetNumberField(TEXT("instances_total"), SceneTile.InstanceCount);
 	JsonObject->SetNumberField(TEXT("texture_total"), Dependency.DependenciesTextures.Num());
 
