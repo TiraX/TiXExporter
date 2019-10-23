@@ -56,6 +56,8 @@ struct FTiXInstance
 	FVector Position;
 	FQuat Rotation;
 	FVector Scale;
+
+	FTransform Transform;
 };
 
 struct FDependency

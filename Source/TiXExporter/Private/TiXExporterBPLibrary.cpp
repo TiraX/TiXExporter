@@ -107,6 +107,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			InstanceInfo.Position = SMActor->GetTransform().GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
 			InstanceInfo.Rotation = SMActor->GetTransform().GetRotation();
 			InstanceInfo.Scale = SMActor->GetTransform().GetScale3D();
+			InstanceInfo.Transform = SMActor->GetTransform();
 			Instances.Add(InstanceInfo);
 		}
 	}
@@ -148,6 +149,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 					InstanceInfo.Position = MeshTransform.GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
 					InstanceInfo.Rotation = MeshTransform.GetRotation();
 					InstanceInfo.Scale = MeshTransform.GetScale3D();
+					InstanceInfo.Transform = MeshTransform;
 					Instances.Add(InstanceInfo);
 				}
 			}
@@ -208,9 +210,11 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 			// Recalc bounding box of this tile
 			FBox MeshBBox = Mesh->GetBoundingBox();
-			MeshBBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
-			MeshBBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
-			FBox TranslatedBox = FBox(MeshBBox.Min + Ins.Position, MeshBBox.Max + Ins.Position);
+
+			FBox TranslatedBox = MeshBBox.TransformBy(Ins.Transform);
+			TranslatedBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
+			TranslatedBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
+
 			if (Tile.BBox.Min == FVector::ZeroVector && Tile.BBox.Max == FVector::ZeroVector)
 			{
 				Tile.BBox = TranslatedBox;
