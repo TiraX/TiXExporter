@@ -554,6 +554,9 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		JsonSections.Add(JsonSectionValue);
 	}
 
+	// Export collision infos
+	TSharedPtr<FJsonObject> JCollisions = ExportMeshCollisions(StaticMesh);
+
 	// output json
 	{
 		TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
@@ -571,8 +574,150 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		// output mesh sections
 		JsonObject->SetArrayField(TEXT("sections"), JsonSections);
 
+		// output mesh collisions
+		JsonObject->SetObjectField(TEXT("collisions"), JCollisions);
+
 		SaveJsonToFile(JsonObject, StaticMesh->GetName(), ExportFullPath);
 	}
+}
+
+TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshCollisions(const UStaticMesh * InMesh)
+{
+	UBodySetup * BodySetup = InMesh->BodySetup;
+	const FKAggregateGeom& AggregateGeom = BodySetup->AggGeom;
+
+	TSharedPtr<FJsonObject> JCollisions = MakeShareable(new FJsonObject);
+	TArray< TSharedPtr<FJsonValue> > JSpheres, JBoxes, JCapsules, JConvexes;
+
+	// Spheres
+	const TArray<FKSphereElem>& SphereElements = AggregateGeom.SphereElems;
+	for (const auto& Sphere : SphereElements)
+	{
+		TSharedPtr<FJsonObject> JSphereCollision = MakeShareable(new FJsonObject);
+
+		FVector SphereCenter = Sphere.Center * TiXExporterSetting.MeshVertexPositionScale;
+		float Radius = Sphere.Radius * TiXExporterSetting.MeshVertexPositionScale;
+
+		TArray< TSharedPtr<FJsonValue> > JCenter;
+		ConvertToJsonArray(SphereCenter, JCenter);
+		JSphereCollision->SetArrayField(TEXT("center"), JCenter);
+		JSphereCollision->SetNumberField(TEXT("radius"), Radius);
+
+		TSharedRef< FJsonValueObject > JSphereValue = MakeShareable(new FJsonValueObject(JSphereCollision));
+		JSpheres.Add(JSphereValue);
+	}
+
+	// Boxes
+	const TArray<FKBoxElem>& BoxElements = AggregateGeom.BoxElems;
+	for (const auto& Box : BoxElements)
+	{
+		TSharedPtr<FJsonObject> JBoxCollision = MakeShareable(new FJsonObject);
+
+		FVector BoxCenter = Box.Center * TiXExporterSetting.MeshVertexPositionScale;
+		FRotator BoxRotation = Box.Rotation;
+		FQuat BoxQuat = FQuat(Box.Rotation);
+		float BoxX = Box.X * TiXExporterSetting.MeshVertexPositionScale;
+		float BoxY = Box.Y * TiXExporterSetting.MeshVertexPositionScale;
+		float BoxZ = Box.Z * TiXExporterSetting.MeshVertexPositionScale;
+
+		TArray< TSharedPtr<FJsonValue> > JCenter, JRotator, JQuat;
+		ConvertToJsonArray(BoxCenter, JCenter);
+		ConvertToJsonArray(BoxRotation, JRotator);
+		ConvertToJsonArray(BoxQuat, JQuat);
+		JBoxCollision->SetArrayField(TEXT("center"), JCenter);
+		JBoxCollision->SetArrayField(TEXT("rotator"), JRotator);
+		JBoxCollision->SetArrayField(TEXT("quat"), JQuat);
+		JBoxCollision->SetNumberField(TEXT("x"), BoxX);
+		JBoxCollision->SetNumberField(TEXT("y"), BoxY);
+		JBoxCollision->SetNumberField(TEXT("z"), BoxZ);
+
+		TSharedRef< FJsonValueObject > JBoxValue = MakeShareable(new FJsonValueObject(JBoxCollision));
+		JBoxes.Add(JBoxValue);
+	}
+
+	// Capsules
+	const TArray<FKSphylElem>& CapsuleElements = AggregateGeom.SphylElems;
+	for (const auto& Capsule : CapsuleElements)
+	{
+		TSharedPtr<FJsonObject> JCapsuleCollision = MakeShareable(new FJsonObject);
+
+		FVector CapsuleCenter = Capsule.Center * TiXExporterSetting.MeshVertexPositionScale;
+		FRotator CapsuleRotation = Capsule.Rotation;
+		FQuat CapsuleQuat = FQuat(CapsuleRotation);
+		float CapsuleRadius = Capsule.Radius * TiXExporterSetting.MeshVertexPositionScale;
+		float CapsuleLength = Capsule.Length * TiXExporterSetting.MeshVertexPositionScale;
+
+		TArray< TSharedPtr<FJsonValue> > JCenter, JRotator, JQuat;
+		ConvertToJsonArray(CapsuleCenter, JCenter);
+		ConvertToJsonArray(CapsuleRotation, JRotator);
+		ConvertToJsonArray(CapsuleQuat, JQuat);
+		JCapsuleCollision->SetArrayField(TEXT("center"), JCenter);
+		JCapsuleCollision->SetArrayField(TEXT("rotator"), JRotator);
+		JCapsuleCollision->SetArrayField(TEXT("quat"), JQuat);
+		JCapsuleCollision->SetNumberField(TEXT("radius"), CapsuleRadius);
+		JCapsuleCollision->SetNumberField(TEXT("length"), CapsuleLength);
+
+		TSharedRef< FJsonValueObject > JCapsuleValue = MakeShareable(new FJsonValueObject(JCapsuleCollision));
+		JCapsules.Add(JCapsuleValue);
+	}
+
+	// Convex
+	const TArray<FKConvexElem>& ConvexElements = AggregateGeom.ConvexElems;
+	for (const auto& Convex : ConvexElements)
+	{
+		TSharedPtr<FJsonObject> JConvexCollision = MakeShareable(new FJsonObject);
+
+		FVector Translation = Convex.GetTransform().GetTranslation() * TiXExporterSetting.MeshVertexPositionScale;
+		FQuat Rotation = Convex.GetTransform().GetRotation();
+		FVector Scale3D = Convex.GetTransform().GetScale3D();
+
+		// Origin convex data
+		TArray<FVector> VertexData = Convex.VertexData;
+		for (auto& V : VertexData)
+		{
+			V *= TiXExporterSetting.MeshVertexPositionScale;
+		}
+		FBox BBox = Convex.ElemBox;
+		BBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
+		BBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
+
+		TArray< TSharedPtr<FJsonValue> > JVertexData, JBBox, JTranslation, JQuat, JScale;
+		ConvertToJsonArray(VertexData, JVertexData);
+		ConvertToJsonArray(BBox, JBBox);
+		ConvertToJsonArray(Translation, JTranslation);
+		ConvertToJsonArray(Rotation, JQuat);
+		ConvertToJsonArray(Scale3D, JScale);
+		JConvexCollision->SetArrayField(TEXT("vertex_data"), JVertexData);
+		JConvexCollision->SetArrayField(TEXT("bbox"), JBBox);
+		JConvexCollision->SetArrayField(TEXT("translation"), JTranslation);
+		JConvexCollision->SetArrayField(TEXT("rotation"), JQuat);
+		JConvexCollision->SetArrayField(TEXT("scale"), JScale);
+
+		// Cooked physic collision data
+		TArray<FDynamicMeshVertex> VertexBuffer;
+		TArray<uint32> IndexBuffer;
+		Convex.AddCachedSolidConvexGeom(VertexBuffer, IndexBuffer, FColor::White);
+		TArray<FVector> VertexPositions;
+		for (const auto& Vertex : VertexBuffer)
+		{
+			VertexPositions.Add(Vertex.Position * TiXExporterSetting.MeshVertexPositionScale);
+		}
+		TArray< TSharedPtr<FJsonValue> > JCookedVertexData, JCookedIndexData;
+		ConvertToJsonArray(VertexPositions, JCookedVertexData);
+		ConvertToJsonArray(IndexBuffer, JCookedIndexData);
+		JConvexCollision->SetArrayField(TEXT("cooked_mesh_vertex_data"), JCookedVertexData);
+		JConvexCollision->SetArrayField(TEXT("cooked_mesh_index_data"), JCookedIndexData);
+
+		TSharedRef< FJsonValueObject > JConvexValue = MakeShareable(new FJsonValueObject(JConvexCollision));
+		JConvexes.Add(JConvexValue);
+	}
+
+	JCollisions->SetArrayField(TEXT("sphere"), JSpheres);
+	JCollisions->SetArrayField(TEXT("box"), JBoxes);
+	JCollisions->SetArrayField(TEXT("capsule"), JCapsules);
+	JCollisions->SetArrayField(TEXT("convex"), JConvexes);
+
+	return JCollisions;
 }
 
 void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components)

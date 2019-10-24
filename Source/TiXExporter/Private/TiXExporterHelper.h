@@ -20,6 +20,7 @@ void ConvertToJsonArray(const FVector4& Vector4Value, TArray< TSharedPtr<FJsonVa
 void ConvertToJsonArray(const FRotator& RotatorValue, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const FBox& BoxValue, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const TArray<int32>& IntArray, TArray< TSharedPtr<FJsonValue> >& OutArray);
+void ConvertToJsonArray(const TArray<uint32>& UIntArray, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const TArray<FVector>& VectorArray, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const TArray<FVector2D>& VectorArray, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, TArray< TSharedPtr<FJsonValue> >& OutArray);

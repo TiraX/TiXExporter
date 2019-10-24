@@ -67,6 +67,8 @@ private:
 	static void ExportTexture(UTexture* InTexture, const FString& Path);
 
 	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
+	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh * InMesh);
+
 	static void ExportSceneTile(const FTiXSceneTile& SceneTile, const FString& WorldName, const FString& InExportName);
 
 	static void GetStaticMeshDependency(const UStaticMesh * StaticMesh, const FString& InExportPath, FDependency& Dependency);

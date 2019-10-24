@@ -150,6 +150,14 @@ void ConvertToJsonArray(const TArray<int32>& IntArray, TArray< TSharedPtr<FJsonV
 		OutArray.Add(JsonValue);
 	}
 }
+void ConvertToJsonArray(const TArray<uint32>& UIntArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	for (const auto& v : UIntArray)
+	{
+		TSharedRef< FJsonValueNumber > JsonValue = MakeShareable(new FJsonValueNumber(v));
+		OutArray.Add(JsonValue);
+	}
+}
 void ConvertToJsonArray(const TArray<FVector>& VectorArray, TArray< TSharedPtr<FJsonValue> >& OutArray)
 {
 	for (const auto& v : VectorArray)
