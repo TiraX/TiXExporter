@@ -53,6 +53,16 @@ void UTiXExporterBPLibrary::SetIgnoreMaterial(bool bIgnore)
 	TiXExporterSetting.bIgnoreMaterial = bIgnore;
 }
 
+void UTiXExporterBPLibrary::SetEnableMeshCluster(bool bEnable)
+{
+	TiXExporterSetting.bEnableMeshCluster = bEnable;
+}
+
+void UTiXExporterBPLibrary::SetMeshClusterSize(int32 Triangles)
+{
+	TiXExporterSetting.MeshClusterSize = Triangles;
+}
+
 
 const FString ExtName = TEXT(".tasset");
 const int32 MaxTextureSize = 1024;
@@ -548,6 +558,12 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 			}
 		}
 
+		if (TiXExporterSetting.bEnableMeshCluster)
+		{
+			UE_LOG(LogTiXExporter, Log, TEXT("Generate clusters for [%s]."), *StaticMesh->GetName());
+			GenerateMeshCluster(VertexSection, IndexSection);
+		}
+
 		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialSlotName, MaterialInstancePathName + ExtName, VsFormat);
 
 		TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
@@ -579,6 +595,11 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 
 		SaveJsonToFile(JsonObject, StaticMesh->GetName(), ExportFullPath);
 	}
+}
+
+void UTiXExporterBPLibrary::GenerateMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices)
+{
+
 }
 
 TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshCollisions(const UStaticMesh * InMesh)

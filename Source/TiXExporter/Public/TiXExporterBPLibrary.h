@@ -57,6 +57,12 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Ignore Material", Keywords = "TiX Set Ignore Material"), Category = "TiXExporter")
 	static void SetIgnoreMaterial(bool bIgnore);
 
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Enable Mesh Cluster", Keywords = "TiX Set Enable Mesh Cluster"), Category = "TiXExporter")
+	static void SetEnableMeshCluster(bool bEnable);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Mesh Cluster Size", Keywords = "TiX Set Mesh Cluster Size"), Category = "TiXExporter")
+	static void SetMeshClusterSize(int32 Triangles);
+
 private:
 	static void ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components);
 
@@ -65,6 +71,8 @@ private:
 	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportTexture(UTexture* InTexture, const FString& Path);
+
+	static void GenerateMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices);
 
 	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
 	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh * InMesh);

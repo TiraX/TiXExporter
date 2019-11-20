@@ -8,11 +8,15 @@ struct FTiXExporterSetting
 	float TileSize;
 	float MeshVertexPositionScale;
 	bool bIgnoreMaterial;
+	bool bEnableMeshCluster;
+	uint32 MeshClusterSize;
 
 	FTiXExporterSetting()
 		: TileSize(16.f)
 		, MeshVertexPositionScale(0.01f)
 		, bIgnoreMaterial(false)
+		, bEnableMeshCluster(false)
+		, MeshClusterSize(128)
 	{}
 };
 
