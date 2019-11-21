@@ -9,6 +9,7 @@ class FTiXMeshCluster
 {
 public:
 	FTiXMeshCluster();
+	FTiXMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices, float PositionScale);
 	~FTiXMeshCluster();
 
 	void GenerateCluster(uint32 ClusterTriangles);
@@ -23,8 +24,7 @@ private:
 
 private:
 	TArray<FVector> P;
-	TArray<FVector> N;
-	TArray<FVector> UV;
+	
 	FBox BBox;
 	TArray<FIntVector> Prims;
 	TArray<FVector> PrimsN;
@@ -39,5 +39,6 @@ private:
 	TArray< TArray<uint32> > PrimVolumePositions;
 
 	// Final Clusters
+public:
 	TArray< TArray<uint32> > Clusters;
 };

@@ -26,12 +26,30 @@ FTiXMeshCluster::FTiXMeshCluster()
 {
 }
 
+FTiXMeshCluster::FTiXMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices, float PositionScale)
+{
+	P.Reserve(InVertices.Num());
+	for (const auto& V : InVertices)
+	{
+		P.Push(V.Position * PositionScale);
+	}
+	BBox = FBox(P);
+	float Extent = BBox.GetExtent().Size() * 2.f;
+	BBox.ExpandBy(Extent * 0.1f);
+	Prims.Reserve(InIndices.Num() / 3);
+	for (int32 i = 0 ; i < InIndices.Num() ; i += 3)
+	{
+		Prims.Push(FIntVector(InIndices[i + 0], InIndices[i + 1], InIndices[i + 2]));
+	}
+}
+
 FTiXMeshCluster::~FTiXMeshCluster()
 {
 }
 
 void FTiXMeshCluster::GenerateCluster(uint32 ClusterTriangles)
 {
+	check(P.Num() > 0 && Prims.Num() > 0);
 	SortPrimitives();
 	CalcPrimNormals();
 	ScatterToVolume();
@@ -86,11 +104,11 @@ inline FBox GetBoundingVolume(const FBox& BBox)
 }
 inline FIntVector GetVolumeCellCount(const FBox& VolumeBox)
 {
-	FVector VolumeSize = VolumeBox.GetExtent();
+	FVector VolumeSize = VolumeBox.GetExtent() * 2.f;
 	FIntVector VolumeCellCount;
 	for (int32 i = 0; i < 3; ++i)
 	{
-		VolumeCellCount[i] = round(VolumeSize[i] / VolumeCellSize);
+		VolumeCellCount[i] = FMath::RoundToInt(VolumeSize[i] / VolumeCellSize);
 	}
 	return VolumeCellCount;
 }
@@ -224,8 +242,8 @@ void FTiXMeshCluster::ScatterToVolume()
 		MeshVolume = GetBoundingVolume(BBox);
 		MeshVolumeCellCount = GetVolumeCellCount(MeshVolume);
 	}
-	VolumeCells.Empty(MeshVolumeCellCount.X * MeshVolumeCellCount.Y * MeshVolumeCellCount.Z);
-	PrimVolumePositions.Empty(PrimCount);
+	VolumeCells.InsertZeroed(0, MeshVolumeCellCount.X * MeshVolumeCellCount.Y * MeshVolumeCellCount.Z);
+	PrimVolumePositions.InsertZeroed(0, PrimCount);
 
 	UE_LOG(LogTiXExporter, Log, TEXT("Mesh Volumes [%d, %d, %d] with size %f. Total : %d"), 
 		MeshVolumeCellCount.X, MeshVolumeCellCount.Y, MeshVolumeCellCount.Z, VolumeCellSize, VolumeCells.Num());
@@ -286,7 +304,7 @@ void FTiXMeshCluster::MakeClusters(uint32 ClusterSize)
 	const uint32 PrimCount = (uint32)Prims.Num();
 
 	TArray<uint32> PrimsClusterId;
-	PrimsClusterId.Empty(PrimCount);
+	PrimsClusterId.InsertZeroed(0, PrimCount);
 	memset(PrimsClusterId.GetData(), 0, PrimCount * sizeof(uint32));
 
 	Clusters.Empty();
@@ -313,7 +331,7 @@ void FTiXMeshCluster::MakeClusters(uint32 ClusterSize)
 
 		// Calculate bounding sphere
 		TArray<FVector> ClusterPoints;
-		TMap<uint32, uint32> PointsInCluster;
+		TMap<int32, uint32> PointsInCluster;
 		TMap<FVector, uint32> UniquePosMap;
 		ClusterPoints.Reserve(ClusterSize * 3);
 		{
@@ -321,12 +339,12 @@ void FTiXMeshCluster::MakeClusters(uint32 ClusterSize)
 			ClusterPoints.Push(P[Prim.X]);
 			ClusterPoints.Push(P[Prim.Y]);
 			ClusterPoints.Push(P[Prim.Z]);
-			PointsInCluster[Prim.X] = 1;
-			PointsInCluster[Prim.Y] = 1;
-			PointsInCluster[Prim.Z] = 1;
-			UniquePosMap[P[Prim.X]] = 1;
-			UniquePosMap[P[Prim.Y]] = 1;
-			UniquePosMap[P[Prim.Z]] = 1;
+			PointsInCluster.Add(Prim.X);
+			PointsInCluster.Add(Prim.Y);
+			PointsInCluster.Add(Prim.Z);
+			UniquePosMap.Add(P[Prim.X]);
+			UniquePosMap.Add(P[Prim.Y]);
+			UniquePosMap.Add(P[Prim.Z]);
 		}
 
 		// Cluster average normal
@@ -435,9 +453,11 @@ void FTiXMeshCluster::MakeClusters(uint32 ClusterSize)
 						if (UniquePosMapResult == nullptr)
 						{
 							ClusterPoints.Push(P[Prim[ii]]);
-							UniquePosMap[P[Prim[ii]]] = 1;
+							//UniquePosMap.FindOrAdd(P[Prim[ii]]);
+							UniquePosMap.Add(P[Prim[ii]]);
 						}
-						PointsInCluster[Prim[ii]] = 1;
+						PointsInCluster.Add(Prim[ii]);
+						//PointsInCluster[Prim[ii]] = 1;
 					}
 				}
 			}
@@ -501,7 +521,7 @@ void FTiXMeshCluster::GetNeighbourPrims(const TArray<uint32>& InPrims, TArray<ui
 			if (CellResult == nullptr)
 			{
 				// Mark cell as searched
-				CellSearched[CellIndex] = 1;
+				CellSearched.Add(CellIndex);
 
 				// Get triangles NOT in cluster in this cell
 				const TArray<uint32>& Primitives = VolumeCells[CellIndex];
@@ -511,7 +531,7 @@ void FTiXMeshCluster::GetNeighbourPrims(const TArray<uint32>& InPrims, TArray<ui
 					if (InPrimsClusterId[CellPrimIndex] == 0 && PrimAddedResult == nullptr)
 					{
 						OutNeighbourPrims.Push(CellPrimIndex);
-						PrimsAdded[CellPrimIndex] = 1;
+						PrimsAdded.Add(CellPrimIndex);
 					}
 				}
 			}
@@ -550,7 +570,7 @@ void FTiXMeshCluster::GetNeighbourPrims(const TArray<uint32>& InPrims, TArray<ui
 					if (CellSearchedResult == nullptr)
 					{
 						// Mark cell as searched
-						CellSearched[NeighbourCellIndex] = 1;
+						CellSearched.Add(NeighbourCellIndex);
 
 						// Get triangles NOT in cluster in this cell
 						const TArray<uint32>& Primitives = VolumeCells[NeighbourCellIndex];
@@ -560,7 +580,7 @@ void FTiXMeshCluster::GetNeighbourPrims(const TArray<uint32>& InPrims, TArray<ui
 							if (InPrimsClusterId[CellPrimIndex] == 0 && PrimsAddedResult == nullptr)
 							{
 								OutNeighbourPrims.Push(CellPrimIndex);
-								PrimsAdded[CellPrimIndex] = 1;
+								PrimsAdded.Add(CellPrimIndex);
 							}
 						}
 					}

@@ -51,8 +51,8 @@ public:
 		TSubspan(const TArray<FVector>& InPoints, uint32 Index)
 			: Points(InPoints)
 		{
-			membership.Empty(InPoints.Num());
-			members.Empty(4);
+			membership.InsertDefaulted(0, InPoints.Num());
+			members.InsertZeroed(0, 4);
 
 			// initialize Q to the identity matrix:
 			for (uint32 i = 0; i < 3; ++i)
@@ -377,7 +377,7 @@ FSmallestEncloseSphere<T>::FSmallestEncloseSphere(const TArray<FVector>& InPoint
 {
 	check(InPoints.Num() > 0);
 	Center = InPoints[0];
-	Lambdas.Empty(4);
+	Lambdas.InsertZeroed(0, 4);
 
 	const uint32 NPoints = (uint32)InPoints.Num();
 	// find farthest point:

@@ -31,6 +31,7 @@
 #include "ImageUtils.h"
 #include "Runtime/Engine/Classes/Exporters/Exporter.h"
 #include "TiXExporterHelper.h"
+#include "FTiXMeshCluster.h"
 
 DEFINE_LOG_CATEGORY(LogTiXExporter);
 
@@ -424,6 +425,26 @@ void UTiXExporterBPLibrary::ExportStaticMeshInternal(UStaticMesh * StaticMesh, F
 		//ExportStaticMeshFromRawMesh(StaticMesh, ExportFullPath, Components);
 	}
 }
+
+void GenerateMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices, TArray< TSharedPtr<FJsonValue> >& OutJClusters)
+{
+	FTiXMeshCluster MeshCluster(InVertices, InIndices, 1.f / TiXExporterSetting.MeshVertexPositionScale);
+	MeshCluster.GenerateCluster(TiXExporterSetting.MeshClusterSize);
+
+	TSharedPtr<FJsonObject> JClusters = MakeShareable(new FJsonObject);
+	JClusters->SetNumberField(TEXT("cluster_count"), MeshCluster.Clusters.Num());
+	JClusters->SetNumberField(TEXT("cluster_size"), TiXExporterSetting.MeshClusterSize);
+
+	for (const auto& C : MeshCluster.Clusters)
+	{
+		TArray< TSharedPtr<FJsonValue> > ClusterIndicesArray;
+		ConvertToJsonArray(C, ClusterIndicesArray);
+
+		TSharedRef< FJsonValueArray > JsonValueArray = MakeShareable(new FJsonValueArray(ClusterIndicesArray));
+		OutJClusters.Add(JsonValueArray);
+	}
+}
+
 void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& InExportPath, const TArray<FString>& Components)
 {
 	FString SMPath = GetResourcePath(StaticMesh);
@@ -558,13 +579,16 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 			}
 		}
 
-		if (TiXExporterSetting.bEnableMeshCluster)
+		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialSlotName, MaterialInstancePathName + ExtName, VsFormat);
+
+		// Disable mesh cluster generate in UE4. Make this happen in converter.
+		if (false && TiXExporterSetting.bEnableMeshCluster)
 		{
 			UE_LOG(LogTiXExporter, Log, TEXT("Generate clusters for [%s]."), *StaticMesh->GetName());
-			GenerateMeshCluster(VertexSection, IndexSection);
+			TArray< TSharedPtr<FJsonValue> > JClusters;
+			GenerateMeshCluster(VertexSection, IndexSection, JClusters);
+			JSection->SetArrayField("clusters", JClusters);
 		}
-
-		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialSlotName, MaterialInstancePathName + ExtName, VsFormat);
 
 		TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
 		JsonSections.Add(JsonSectionValue);
@@ -595,11 +619,6 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 
 		SaveJsonToFile(JsonObject, StaticMesh->GetName(), ExportFullPath);
 	}
-}
-
-void UTiXExporterBPLibrary::GenerateMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices)
-{
-
 }
 
 TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshCollisions(const UStaticMesh * InMesh)

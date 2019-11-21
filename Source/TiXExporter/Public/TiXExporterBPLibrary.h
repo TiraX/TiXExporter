@@ -72,8 +72,6 @@ private:
 	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportTexture(UTexture* InTexture, const FString& Path);
 
-	static void GenerateMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices);
-
 	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
 	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh * InMesh);
 
