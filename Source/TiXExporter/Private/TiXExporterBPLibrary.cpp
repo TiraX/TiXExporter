@@ -499,6 +499,12 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 	TArray<uint32> MeshIndices;
 	LODResource.IndexBuffer.GetCopy(MeshIndices);
 
+	// data container
+	TArray<FTiXVertex> VertexData;
+	TArray<int32> IndexData;
+	TMap<FTiXVertex, int32> IndexMap;
+	TArray<FTiXMeshSection> MeshSections;
+
 	TArray< TSharedPtr<FJsonValue> > JsonSections;
 	for (int32 Section = 0; Section < LODResource.Sections.Num(); ++Section)
 	{
@@ -509,6 +515,13 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		const int32 MaxVertexIndex = MeshSection.MaxVertexIndex;
 		const int32 FirstIndex = MeshSection.FirstIndex;
 
+		// Remember this section
+		FTiXMeshSection TiXSection;
+		TiXSection.NumTriangles = MeshSection.NumTriangles;
+		TiXSection.IndexStart = IndexData.Num();
+		MeshSections.Add(TiXSection);
+
+		// Dump section name and material
 		FString MaterialInstancePathName, MaterialSlotName;
 
 		if (TiXExporterSetting.bIgnoreMaterial)
@@ -524,12 +537,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 			ExportMaterialInstance(StaticMesh->StaticMaterials[MeshSection.MaterialIndex].MaterialInterface, InExportPath);
 		}
 
-		// data container
-		TArray<FTiXVertex> VertexSection;
-		TArray<int32> IndexSection;
-		TMap<FTiXVertex, int32> IndexMapSection;
-
-		// go through indices
+		// Collect vertices and indices
 		const int32 MaxIndex = FirstIndex + TotalFaces * 3;
 		for (int32 ii = FirstIndex; ii < MaxIndex; ++ii)
 		{
@@ -563,36 +571,39 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 			}
 
 			// gather vertices and indices
-			int32 * VertexIndex = IndexMapSection.Find(Vertex);
+			int32 * VertexIndex = IndexMap.Find(Vertex);
 			if (VertexIndex == nullptr)
 			{
 				// Add a new vertex to vertex buffer
-				VertexSection.Add(Vertex);
-				int32 CurrentIndex = VertexSection.Num() - 1;
-				IndexSection.Add(CurrentIndex);
-				IndexMapSection.Add(Vertex, CurrentIndex);
+				VertexData.Add(Vertex);
+				int32 CurrentIndex = VertexData.Num() - 1;
+				IndexData.Add(CurrentIndex);
+				IndexMap.Add(Vertex, CurrentIndex);
 			}
 			else
 			{
 				// Add an exist vertex's index
-				IndexSection.Add(*VertexIndex);
+				IndexData.Add(*VertexIndex);
 			}
 		}
 
-		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(VertexSection, IndexSection, MaterialSlotName, MaterialInstancePathName + ExtName, VsFormat);
+		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(TiXSection, MaterialSlotName, MaterialInstancePathName + ExtName);
 
 		// Disable mesh cluster generate in UE4. Make this happen in converter.
 		if (false && TiXExporterSetting.bEnableMeshCluster)
 		{
 			UE_LOG(LogTiXExporter, Log, TEXT("Generate clusters for [%s]."), *StaticMesh->GetName());
 			TArray< TSharedPtr<FJsonValue> > JClusters;
-			GenerateMeshCluster(VertexSection, IndexSection, JClusters);
+			GenerateMeshCluster(VertexData, IndexData, JClusters);
 			JSection->SetArrayField("clusters", JClusters);
 		}
 
 		TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
 		JsonSections.Add(JsonSectionValue);
 	}
+
+	// Export mesh data
+	TSharedPtr<FJsonObject> JMeshData = SaveMeshDataToJson(VertexData, IndexData, VsFormat);
 
 	// Export collision infos
 	TSharedPtr<FJsonObject> JCollisions = ExportMeshCollisions(StaticMesh);
@@ -610,6 +621,9 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		JsonObject->SetNumberField(TEXT("index_count_total"), MeshIndices.Num());
 		JsonObject->SetNumberField(TEXT("texcoord_count"), TotalNumTexCoords);
 		JsonObject->SetNumberField(TEXT("total_lod"), 1);
+
+		// output mesh data
+		JsonObject->SetObjectField(TEXT("data"), JMeshData);
 
 		// output mesh sections
 		JsonObject->SetArrayField(TEXT("sections"), JsonSections);
@@ -921,18 +935,19 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh,
 			JsonObject->SetNumberField(TEXT("texcoord_count"), TexCoordCount);
 			JsonObject->SetNumberField(TEXT("total_lod"), 1);
 
+			check(0);
 			// output mesh sections
-			TArray< TSharedPtr<FJsonValue> > JsonSections;
-			for (int32 section = 0; section < MaterialSections.Num(); ++section)
-			{
-				TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(Vertices[section], Indices[section], Materials[section]->MaterialSlotName.ToString(), Materials[section]->MaterialInterface->GetName() + ExtName, VsFormat);
+			//TArray< TSharedPtr<FJsonValue> > JsonSections;
+			//for (int32 section = 0; section < MaterialSections.Num(); ++section)
+			//{
+			//	TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(Vertices[section], Indices[section], Materials[section]->MaterialSlotName.ToString(), Materials[section]->MaterialInterface->GetName() + ExtName, VsFormat);
 
-				TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
-				JsonSections.Add(JsonSectionValue);
-			}
-			JsonObject->SetArrayField(TEXT("sections"), JsonSections);
+			//	TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
+			//	JsonSections.Add(JsonSectionValue);
+			//}
+			//JsonObject->SetArrayField(TEXT("sections"), JsonSections);
 
-			SaveJsonToFile(JsonObject, StaticMesh->GetName(), Path);
+			//SaveJsonToFile(JsonObject, StaticMesh->GetName(), Path);
 		}
 	}
 }

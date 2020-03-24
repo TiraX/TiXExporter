@@ -55,6 +55,24 @@ struct FTiXVertex
 	}
 };
 
+struct FTiXMeshSection
+{
+	uint32 IndexStart;
+	uint32 NumTriangles;
+
+	/** Constructor. */
+	FTiXMeshSection()
+		: IndexStart(0)
+		, NumTriangles(0)
+	{
+	}
+
+	bool operator == (const FTiXMeshSection& Other) const
+	{
+		return IndexStart == Other.IndexStart && NumTriangles == Other.NumTriangles;
+	}
+};
+
 struct FTiXInstance
 {
 	FVector Position;

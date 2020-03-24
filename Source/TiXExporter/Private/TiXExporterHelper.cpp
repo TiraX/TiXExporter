@@ -329,22 +329,12 @@ FString CombineResourceExportPath(const UObject * Resource, const FString& InExp
 	return FullPathName;
 }
 
-TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, const FString& SectionName, const FString& MaterialInstanceName, int32 VsFormat)
+TSharedPtr<FJsonObject> SaveMeshDataToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, int32 VsFormat)
 {
 	TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
 
-	JSection->SetStringField(TEXT("name"), SectionName);
-	JSection->SetNumberField(TEXT("vertex_count"), Vertices.Num());
-	JSection->SetStringField(TEXT("material"), MaterialInstanceName);
-
 	TArray< TSharedPtr<FJsonValue> > IndicesArray, VerticesArray;
 	TArray< TSharedPtr<FJsonValue> > FormatArray;
-
-	ConvertToJsonArray(Vertices, VsFormat, VerticesArray);
-	JSection->SetArrayField(TEXT("vertices"), VerticesArray);
-
-	ConvertToJsonArray(Indices, IndicesArray);
-	JSection->SetArrayField(TEXT("indices"), IndicesArray);
 
 #define ADD_VS_FORMAT(Format) if ((VsFormat & Format) != 0) FormatArray.Add(MakeShareable(new FJsonValueString(TEXT(#Format))))
 	ADD_VS_FORMAT(EVSSEG_POSITION);
@@ -358,6 +348,24 @@ TSharedPtr<FJsonObject> SaveMeshSectionToJson(const TArray<FTiXVertex>& Vertices
 #undef ADD_VS_FORMAT
 
 	JSection->SetArrayField(TEXT("vs_format"), FormatArray);
+
+	ConvertToJsonArray(Vertices, VsFormat, VerticesArray);
+	JSection->SetArrayField(TEXT("vertices"), VerticesArray);
+
+	ConvertToJsonArray(Indices, IndicesArray);
+	JSection->SetArrayField(TEXT("indices"), IndicesArray);
+
+	return JSection;
+}
+
+TSharedPtr<FJsonObject> SaveMeshSectionToJson(const FTiXMeshSection& TiXSection, const FString& SectionName, const FString& MaterialInstanceName)
+{
+	TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
+
+	JSection->SetStringField(TEXT("name"), SectionName);
+	JSection->SetStringField(TEXT("material"), MaterialInstanceName);
+	JSection->SetNumberField(TEXT("index_start"), TiXSection.IndexStart);
+	JSection->SetNumberField(TEXT("triangles"), TiXSection.NumTriangles);
 
 	return JSection;
 }
