@@ -329,7 +329,7 @@ FString CombineResourceExportPath(const UObject * Resource, const FString& InExp
 	return FullPathName;
 }
 
-TSharedPtr<FJsonObject> SaveMeshDataToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, int32 VsFormat)
+TSharedPtr<FJsonObject> SaveMeshDataToJson(const TArray<FTiXVertex>& Vertices, const TArray<uint32>& Indices, int32 VsFormat)
 {
 	TSharedPtr<FJsonObject> JSection = MakeShareable(new FJsonObject);
 

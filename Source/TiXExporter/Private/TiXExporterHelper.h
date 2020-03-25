@@ -30,7 +30,7 @@ void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, con
 void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FString& Path);
 
 // Save mesh vertices and indices
-TSharedPtr<FJsonObject> SaveMeshDataToJson(const TArray<FTiXVertex>& Vertices, const TArray<int32>& Indices, int32 VsFormat);
+TSharedPtr<FJsonObject> SaveMeshDataToJson(const TArray<FTiXVertex>& Vertices, const TArray<uint32>& Indices, int32 VsFormat);
 
 // Save mesh sections info
 TSharedPtr<FJsonObject> SaveMeshSectionToJson(const FTiXMeshSection& TiXSection, const FString& SectionName, const FString& MaterialInstanceName);
