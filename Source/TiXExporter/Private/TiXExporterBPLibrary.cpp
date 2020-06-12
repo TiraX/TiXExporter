@@ -143,11 +143,11 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		{
 			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
 			AInstancedFoliageActor * FoliageActor = (AInstancedFoliageActor*)A;
-			for (const auto& MeshPair : FoliageActor->FoliageMeshes)
+			for (const auto& FoliagePair : FoliageActor->FoliageInfos)
 			{
-				const FFoliageMeshInfo& MeshInfo = *MeshPair.Value;
+				const FFoliageInfo& FoliageInfo = *FoliagePair.Value;
 
-				UHierarchicalInstancedStaticMeshComponent* MeshComponent = MeshInfo.Component;
+				UHierarchicalInstancedStaticMeshComponent* MeshComponent = FoliageInfo.GetComponent();
 				TArray<FInstancedStaticMeshInstanceData> MeshDataArray = MeshComponent->PerInstanceSMData;
 
 				UStaticMesh * StaticMesh = MeshComponent->GetStaticMesh();
@@ -347,7 +347,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 						// Heightmap
 						const ULandscapeComponent * LandscapeComponent = CompPair.Value;
-						UTexture2D * HeightmapTexture = LandscapeComponent->HeightmapTexture;
+						UTexture2D * HeightmapTexture = LandscapeComponent->GetHeightmap();
 						if (HeightmapTextures.Find(HeightmapTexture) == INDEX_NONE)
 						{
 							HeightmapTextures.Add(HeightmapTexture);
@@ -798,8 +798,7 @@ TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshCollisions(const UStati
 
 void UTiXExporterBPLibrary::ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components)
 {
-	FMeshDescription* Description = StaticMesh->GetOriginalMeshDescription(0);
-	for (const auto& Model : StaticMesh->SourceModels)
+	for (const auto& Model : StaticMesh->GetSourceModels())
 	{
 		FRawMesh ReadMesh;
 		Model.LoadRawMesh(ReadMesh);
