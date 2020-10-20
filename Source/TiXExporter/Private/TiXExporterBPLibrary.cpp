@@ -109,6 +109,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		UGameplayStatics::GetAllActorsOfClass(Actor, AStaticMeshActor::StaticClass(), Actors);
 		for (auto A : Actors)
 		{
+			if (A->IsHidden())
+				continue;
 			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
 			AStaticMeshActor * SMActor = static_cast<AStaticMeshActor*>(A);
 			UStaticMesh * StaticMesh = SMActor->GetStaticMeshComponent()->GetStaticMesh();
@@ -130,6 +132,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		UGameplayStatics::GetAllActorsOfClass(Actor, ASkeletalMeshActor::StaticClass(), Actors);
 		for (auto A : Actors)
 		{
+			if (A->IsHidden())
+				continue;
 			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
 		}
 	}
@@ -141,6 +145,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		UGameplayStatics::GetAllActorsOfClass(Actor, AInstancedFoliageActor::StaticClass(), Actors);
 		for (auto A : Actors)
 		{
+			if (A->IsHidden())
+				continue;
 			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
 			AInstancedFoliageActor * FoliageActor = (AInstancedFoliageActor*)A;
 			for (const auto& FoliagePair : FoliageActor->FoliageInfos)
