@@ -1457,6 +1457,19 @@ void UTiXExporterBPLibrary::GetStaticMeshDependency(const UStaticMesh * StaticMe
 			FString MIPathName = CombineResourceExportPath(MaterialInstance, InExportPath);
 			Dependency.DependenciesMaterialInstances.AddUnique(MIPathName);
 
+			// Parent Materials
+			UMaterialInterface* ParentMaterial = MaterialInstance->Parent;
+			while (ParentMaterial && !ParentMaterial->IsA(UMaterial::StaticClass()))
+			{
+				check(ParentMaterial->IsA(UMaterialInstance::StaticClass()));
+				UMaterialInstance* ParentMaterialInstance = Cast<UMaterialInstance>(ParentMaterial);
+				ParentMaterial = ParentMaterialInstance->Parent;
+			}
+			check(ParentMaterial != nullptr);
+			UMaterial * Material = Cast<UMaterial>(ParentMaterial);
+			FString MaterialPathName = CombineResourceExportPath(Material, InExportPath);
+			Dependency.DependenciesMaterials.AddUnique(MaterialPathName);
+
 			// Add textures
 			for (int32 i = 0; i < MaterialInstance->TextureParameterValues.Num(); ++i)
 			{
