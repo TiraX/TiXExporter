@@ -1008,6 +1008,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 		// Scalar parameters
 		TArray<FVector4> ScalarVectorParams;
 		TArray<FString> ScalarVectorNames;
+		TArray<FString> ScalarVectorComments;
 		for (int32 i = 0; i < MaterialInstance->ScalarParameterValues.Num(); ++i)
 		{
 			const FScalarParameterValue& ScalarValue = MaterialInstance->ScalarParameterValues[i];
@@ -1019,8 +1020,13 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 				ScalarVectorParams.Add(FVector4());
 				FString Name = FString::Printf(TEXT("CombinedScalar%d"), CombinedIndex);
 				ScalarVectorNames.Add(Name);
+				ScalarVectorComments.Add(FString());
 			}
+			// Remember value
 			ScalarVectorParams[CombinedIndex][IndexInVector4] = ScalarValue.ParameterValue;
+			// Remember scalar param name
+			FString ScalarParamName = FString::Printf(TEXT("%d = %s; "), IndexInVector4, *ScalarValue.ParameterInfo.Name.ToString());
+			ScalarVectorComments[CombinedIndex] += ScalarParamName;
 		}
 
 		// Vector parameters.
@@ -1030,6 +1036,7 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 
 			ScalarVectorParams.Add(FVector4(VectorValue.ParameterValue));
 			ScalarVectorNames.Add(VectorValue.ParameterInfo.Name.ToString());
+			ScalarVectorComments.Add(VectorValue.ParameterInfo.Name.ToString());
 		}
 
 		// Texture parameters.
@@ -1067,6 +1074,8 @@ void UTiXExporterBPLibrary::ExportMaterialInstance(UMaterialInterface* InMateria
 			{
 				TSharedPtr<FJsonObject> JParameter = MakeShareable(new FJsonObject);
 				JParameter->SetStringField(TEXT("type"), TEXT("float4"));
+
+				JParameter->SetStringField(TEXT("declare"), ScalarVectorComments[SVParam]);
 				
 				TArray< TSharedPtr<FJsonValue> > JSVParam;
 				ConvertToJsonArray(ScalarVectorParams[SVParam], JSVParam);
