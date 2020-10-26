@@ -9,6 +9,7 @@
 #include "Engine/Classes/Animation/SkeletalMeshActor.h"
 #include "InstancedFoliageActor.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/ReflectionCapture.h"
 #include "Runtime/Landscape/Classes/Landscape.h"
 #include "Runtime/Landscape/Classes/LandscapeComponent.h"
 #include "Runtime/Landscape/Classes/LandscapeInfo.h"
@@ -103,6 +104,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	int32 a = 0;
 	UE_LOG(LogTiXExporter, Log, TEXT("Export tix scene ..."));
 
+	// Collect Static Meshes
 	if (ContainComponent(SceneComponents, TEXT("STATIC_MESH")))
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT("  Static mesh actors..."));
@@ -125,6 +127,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		}
 	}
 
+	// Collect Skeletal Meshes
 	if (ContainComponent(SceneComponents, TEXT("SKELETAL_MESH")))
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT(" Skeletal mesh actors..."));
@@ -138,6 +141,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		}
 	}
 
+	// Collect Foliages
 	if (ContainComponent(SceneComponents, TEXT("FOLIAGE_AND_GRASS")))
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT(" Foliage and grass  actors..."));
@@ -170,6 +174,27 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 					Instances.Add(InstanceInfo);
 				}
 			}
+		}
+	}
+
+	// Collect Reflection Captures
+	TArray< AReflectionCapture* > RCActors;
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT(" Reflection capture actors..."));
+		Actors.Empty();
+		UGameplayStatics::GetAllActorsOfClass(Actor, AReflectionCapture::StaticClass(), Actors);
+		for (auto A : Actors)
+		{
+			if (A->IsHidden())
+				continue;
+			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+			AReflectionCapture* RCActor = static_cast<AReflectionCapture*>(A);
+			RCActors.Add(RCActor);
+			//UReflectionCaptureComponent* RCComponent = RCActor->GetCaptureComponent();
+
+			//ReflectionEnvironmentCapture.cpp
+			//void FScene::GetReflectionCaptureData(UReflectionCaptureComponent * Component, FReflectionCaptureData & OutCaptureData)
+			//World->Scene->GetReflectionCaptureData(CaptureComponent, ReadbackCaptureData);
 		}
 	}
 
