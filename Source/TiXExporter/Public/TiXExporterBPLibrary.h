@@ -71,7 +71,7 @@ private:
 	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportTexture(UTexture* InTexture, const FString& Path);
-	static void ExportReflectionCaptures(AReflectionCapture* RCActor, const FString& Path);
+	static void ExportReflectionCapture(AReflectionCapture* RCActor, const FString& Path);
 
 	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
 	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh * InMesh);

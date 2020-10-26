@@ -90,6 +90,7 @@ struct FDependency
 	TArray<FString> DependenciesTextures;
 };
 
+class AReflectionCapture;
 struct FTiXSceneTile
 {
 	FIntPoint Position;
@@ -98,6 +99,7 @@ struct FTiXSceneTile
 	FBox BBox;
 
 	TMap<UStaticMesh*, TArray<FTiXInstance> > TileInstances;
+	TArray< AReflectionCapture* > ReflectionCaptures;
 
 	FTiXSceneTile()
 		: TileSize(0.f)

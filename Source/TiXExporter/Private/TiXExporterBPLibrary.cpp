@@ -10,6 +10,9 @@
 #include "InstancedFoliageActor.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/ReflectionCapture.h"
+#include "Components/ReflectionCaptureComponent.h"
+#include "Editor/UnrealEd/Classes/Factories/TextureFactory.h"
+#include "Engine/Classes/Engine/MapBuildDataRegistry.h"
 #include "Runtime/Landscape/Classes/Landscape.h"
 #include "Runtime/Landscape/Classes/LandscapeComponent.h"
 #include "Runtime/Landscape/Classes/LandscapeInfo.h"
@@ -190,11 +193,6 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
 			AReflectionCapture* RCActor = static_cast<AReflectionCapture*>(A);
 			RCActors.Add(RCActor);
-			//UReflectionCaptureComponent* RCComponent = RCActor->GetCaptureComponent();
-
-			//ReflectionEnvironmentCapture.cpp
-			//void FScene::GetReflectionCaptureData(UReflectionCaptureComponent * Component, FReflectionCaptureData & OutCaptureData)
-			//World->Scene->GetReflectionCaptureData(CaptureComponent, ReadbackCaptureData);
 		}
 	}
 
@@ -266,6 +264,30 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 				Tile.BBox += TranslatedBox;
 			}
 		}
+	}
+
+	// Export reflection captures's ibl cube maps
+	FString UpdateReason = TEXT("all levels");
+	UReflectionCaptureComponent::UpdateReflectionCaptureContents(CurrentWorld, *UpdateReason, true);
+	for (auto RCActor : RCActors)
+	{
+		FString ActorName = RCActor->GetName();
+		ExportReflectionCapture(RCActor, ExportPath);
+	}
+
+	// Sort reflection capture actors into scene tiles
+	for (auto RCActor : RCActors)
+	{
+		FVector Position = RCActor->GetTransform().GetLocation()* TiXExporterSetting.MeshVertexPositionScale;
+
+		FIntPoint InsPoint = GetPointByPosition(Position, TiXExporterSetting.TileSize);
+		FTiXSceneTile& Tile = Tiles.FindOrAdd(InsPoint);
+
+		Tile.Position = InsPoint;
+		Tile.TileSize = TiXExporterSetting.TileSize;
+
+		// Add reflection capture actor
+		Tile.ReflectionCaptures.Add(RCActor);
 	}
 
 	// output json
@@ -1323,6 +1345,87 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		int32 LodBias = InTexture->LODBias;
 		JsonObject->SetNumberField(TEXT("lod_bias"), LodBias);
 		SaveJsonToFile(JsonObject, InTexture->GetName(), ExportFullPath);
+	}
+}
+
+void UTiXExporterBPLibrary::ExportReflectionCapture(AReflectionCapture* RCActor, const FString& Path)
+{
+	// Export cubemap data
+	UWorld* CurrentWorld = RCActor->GetWorld();
+	ULevel* CurrentLevel = CurrentWorld->GetCurrentLevel();
+	UReflectionCaptureComponent * RCComponent = RCActor->GetCaptureComponent();
+
+	FReflectionCaptureData ReadbackCaptureData;
+	CurrentWorld->Scene->GetReflectionCaptureData(RCComponent, ReadbackCaptureData);
+	if (ReadbackCaptureData.CubemapSize > 0)
+	{
+		UMapBuildDataRegistry* Registry = CurrentLevel->GetOrCreateMapBuildData();
+		//if (!RCComponent->bModifyMaxValueRGBM)
+		//{
+		//	RCComponent->MaxValueRGBM = GetMaxValueRGBM(ReadbackCaptureData.FullHDRCapturedData, ReadbackCaptureData.CubemapSize, ReadbackCaptureData.Brightness);
+		//}
+		FString TextureName = TEXT("TC_") + RCActor->GetName();
+		UTextureFactory* TextureFactory = NewObject<UTextureFactory>();
+		TextureFactory->SuppressImportOverwriteDialog();
+
+		TextureFactory->CompressionSettings = TC_HDR;
+		UTextureCube* TextureCube = TextureFactory->CreateTextureCube(Registry, FName(TextureName), RF_Standalone | RF_Public);
+
+		if (TextureCube)
+		{
+			//TArray<uint8> TemporaryEncodedHDRCapturedData;
+			//GenerateEncodedHDRData(ReadbackCaptureData.FullHDRCapturedData, ReadbackCaptureData.CubemapSize, ReadbackCaptureData.Brightness, TemporaryEncodedHDRCapturedData);
+			const int32 NumMips = FMath::CeilLogTwo(ReadbackCaptureData.CubemapSize) + 1;
+			TextureCube->Source.Init(
+				ReadbackCaptureData.CubemapSize,
+				ReadbackCaptureData.CubemapSize,
+				6,
+				NumMips,
+				TSF_RGBA16F,
+				ReadbackCaptureData.FullHDRCapturedData.GetData()
+			);
+			// the loader can suggest a compression setting
+			TextureCube->LODGroup = TEXTUREGROUP_World;
+
+			bool bIsCompressed = false;
+			//if (RCComponent != nullptr)
+			//{
+			//	bIsCompressed = RCComponent->MobileReflectionCompression == EMobileReflectionCompression::Default ? bIsReflectionCaptureCompressionProjectSetting : CaptureComponent->MobileReflectionCompression == EMobileReflectionCompression::On;
+			//}
+
+			TextureCube->CompressionSettings = TC_HDR;
+			TextureCube->CompressionNone = !bIsCompressed;
+			TextureCube->CompressionQuality = TCQ_Highest;
+			TextureCube->Filter = TF_Trilinear;
+			TextureCube->SRGB = 0;
+
+			// for now we don't support mip map generation on cubemaps
+			TextureCube->MipGenSettings = TMGS_LeaveExistingMips;
+
+			TextureCube->UpdateResource();
+			TextureCube->MarkPackageDirty();
+
+
+			//FString Path = GetResourcePath(InTexture);
+			FString ExportPath = Path;
+			ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+			if (ExportPath[ExportPath.Len() - 1] != '/')
+				ExportPath.AppendChar('/');
+			FString MapName = CurrentWorld->GetName();
+			FString ExportFullPath = ExportPath + MapName + TEXT("/");
+
+			FString HdrExtName = TEXT("hdr");
+			FBufferArchive Buffer;
+			UExporter::ExportToArchive(TextureCube, nullptr, Buffer, *HdrExtName, 0);
+
+			VerifyOrCreateDirectory(ExportFullPath);
+			FString ExportFullPathName = ExportFullPath + TextureName + TEXT(".") + HdrExtName;
+			if (Buffer.Num() == 0 || !FFileHelper::SaveArrayToFile(Buffer, *ExportFullPathName))
+			{
+				UE_LOG(LogTiXExporter, Error, TEXT("Fail to save reflection cube %s"), *ExportFullPathName);
+				return;
+			}
+		}
 	}
 }
 
