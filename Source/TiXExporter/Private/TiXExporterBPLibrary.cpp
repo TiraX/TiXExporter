@@ -1278,6 +1278,15 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 
 void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& InExportPath)
 {
+	if (!InTexture->IsA(UTexture2D::StaticClass()) && !InTexture->IsA(UTextureCube::StaticClass()))
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("  Texture other than UTexture2D and UTextureCube are NOT supported yet."));
+		return;
+	}
+	const bool IsTexture2D = InTexture->IsA(UTexture2D::StaticClass());
+	UTexture2D* InTexture2D = Cast<UTexture2D>(InTexture);
+	UTextureCube* InTextureCube = Cast<UTextureCube>(InTexture);
+
 	FString Path = GetResourcePath(InTexture);
 	FString ExportPath = InExportPath;
 	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
@@ -1285,21 +1294,22 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		ExportPath.AppendChar('/');
 	FString ExportFullPath = ExportPath + Path;
 
-	FString TgaExtName = TEXT("tga");
+	// Save texture 2d with tga format and texture cube with hdr format
+	FString ImageExtName = IsTexture2D ? TEXT("tga") : TEXT("hdr");
 	FString FullPathName = Path + InTexture->GetName();
 
-	if (!InTexture->IsA(UTexture2D::StaticClass()))
+	FBufferArchive Buffer;
+	if (IsTexture2D)
 	{
-		UE_LOG(LogTiXExporter, Error, TEXT("  Texture other than UTexture2D NOT supported yet."));
-		return;
+		UExporter::ExportToArchive(InTexture2D, nullptr, Buffer, *ImageExtName, 0);
+	}
+	else
+	{
+		UExporter::ExportToArchive(InTextureCube, nullptr, Buffer, *ImageExtName, 0);
 	}
 
-	UTexture2D * InTexture2D = Cast<UTexture2D>(InTexture);
-	FBufferArchive Buffer;
-	UExporter::ExportToArchive(InTexture, nullptr, Buffer, *TgaExtName, 0);
-
 	VerifyOrCreateDirectory(ExportFullPath);
-	FString ExportFullPathName = ExportFullPath + InTexture->GetName() + TEXT(".") + TgaExtName;
+	FString ExportFullPathName = ExportFullPath + InTexture->GetName() + TEXT(".") + ImageExtName;
 	if (Buffer.Num() == 0 || !FFileHelper::SaveArrayToFile(Buffer, *ExportFullPathName))
 	{
 		UE_LOG(LogTiXExporter, Error, TEXT("Fail to save texture %s"), *FullPathName);
@@ -1315,31 +1325,34 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		JsonObject->SetStringField(TEXT("type"), TEXT("texture"));
 		JsonObject->SetNumberField(TEXT("version"), 1);
 		JsonObject->SetStringField(TEXT("desc"), TEXT("Texture from TiX exporter."));
-		JsonObject->SetStringField(TEXT("source"), InTexture->GetName() + TEXT(".") + TgaExtName);
-		JsonObject->SetStringField(TEXT("texture_type"), TEXT("ETT_TEXTURE_2D"));
+		JsonObject->SetStringField(TEXT("source"), InTexture->GetName() + TEXT(".") + ImageExtName);
+		JsonObject->SetStringField(TEXT("texture_type"), IsTexture2D ? TEXT("ETT_TEXTURE_2D") : TEXT("ETT_TEXTURE_CUBE"));
 		JsonObject->SetNumberField(TEXT("srgb"), InTexture->SRGB ? 1 : 0);
 		JsonObject->SetNumberField(TEXT("is_normalmap"), InTexture->LODGroup == TEXTUREGROUP_WorldNormalMap ? 1 : 0);
 		JsonObject->SetNumberField(TEXT("has_mips"), InTexture->MipGenSettings != TMGS_NoMipmaps ? 1 : 0);
 
-		FString AddressMode;
-		switch (InTexture2D->AddressX)
+		if (IsTexture2D)
 		{
-		case TA_Wrap:
-			AddressMode = TEXT("ETC_REPEAT");
-			break;
-		case TA_Clamp:
-			AddressMode = TEXT("ETC_CLAMP_TO_EDGE");
-			break;
-		case TA_Mirror:
-			AddressMode = TEXT("ETC_MIRROR");
-			break;
-		}
-		JsonObject->SetStringField(TEXT("address_mode"), AddressMode);
+			FString AddressMode;
+			switch (InTexture2D->AddressX)
+			{
+			case TA_Wrap:
+				AddressMode = TEXT("ETC_REPEAT");
+				break;
+			case TA_Clamp:
+				AddressMode = TEXT("ETC_CLAMP_TO_EDGE");
+				break;
+			case TA_Mirror:
+				AddressMode = TEXT("ETC_MIRROR");
+				break;
+			}
+			JsonObject->SetStringField(TEXT("address_mode"), AddressMode);
 
-		if (!FMath::IsPowerOfTwo(InTexture2D->GetSizeX()) ||
-			!FMath::IsPowerOfTwo(InTexture2D->GetSizeY()))
-		{
-			UE_LOG(LogTiXExporter, Warning, TEXT("%s size is not Power of Two. %d, %d."), *InTexture->GetName(), InTexture2D->GetSizeX(), InTexture2D->GetSizeY());
+			if (!FMath::IsPowerOfTwo(InTexture2D->GetSizeX()) ||
+				!FMath::IsPowerOfTwo(InTexture2D->GetSizeY()))
+			{
+				UE_LOG(LogTiXExporter, Warning, TEXT("%s size is not Power of Two. %d, %d."), *InTexture->GetName(), InTexture2D->GetSizeX(), InTexture2D->GetSizeY());
+			}
 		}
 
 		int32 LodBias = InTexture->LODBias;
@@ -1405,26 +1418,13 @@ void UTiXExporterBPLibrary::ExportReflectionCapture(AReflectionCapture* RCActor,
 			TextureCube->UpdateResource();
 			TextureCube->MarkPackageDirty();
 
-
-			//FString Path = GetResourcePath(InTexture);
 			FString ExportPath = Path;
 			ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
 			if (ExportPath[ExportPath.Len() - 1] != '/')
 				ExportPath.AppendChar('/');
 			FString MapName = CurrentWorld->GetName();
 			FString ExportFullPath = ExportPath + MapName + TEXT("/");
-
-			FString HdrExtName = TEXT("hdr");
-			FBufferArchive Buffer;
-			UExporter::ExportToArchive(TextureCube, nullptr, Buffer, *HdrExtName, 0);
-
-			VerifyOrCreateDirectory(ExportFullPath);
-			FString ExportFullPathName = ExportFullPath + TextureName + TEXT(".") + HdrExtName;
-			if (Buffer.Num() == 0 || !FFileHelper::SaveArrayToFile(Buffer, *ExportFullPathName))
-			{
-				UE_LOG(LogTiXExporter, Error, TEXT("Fail to save reflection cube %s"), *ExportFullPathName);
-				return;
-			}
+			ExportTexture(TextureCube, ExportFullPath);
 		}
 	}
 }
