@@ -1276,7 +1276,7 @@ void UTiXExporterBPLibrary::ExportMaterial(UMaterialInterface* InMaterial, const
 	}
 }
 
-void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& InExportPath)
+void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& InExportPath, bool UsedAsIBL)
 {
 	if (!InTexture->IsA(UTexture2D::StaticClass()) && !InTexture->IsA(UTextureCube::StaticClass()))
 	{
@@ -1292,7 +1292,11 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
 	if (ExportPath[ExportPath.Len() - 1] != '/')
 		ExportPath.AppendChar('/');
-	FString ExportFullPath = ExportPath + Path;
+	FString ExportFullPath;
+	if (!UsedAsIBL)
+		ExportFullPath = ExportPath + Path;
+	else
+		ExportFullPath = ExportPath;
 
 	// Save texture 2d with tga format and texture cube with hdr format
 	FString ImageExtName = IsTexture2D ? TEXT("tga") : TEXT("hdr");
@@ -1330,6 +1334,21 @@ void UTiXExporterBPLibrary::ExportTexture(UTexture* InTexture, const FString& In
 		JsonObject->SetNumberField(TEXT("srgb"), InTexture->SRGB ? 1 : 0);
 		JsonObject->SetNumberField(TEXT("is_normalmap"), InTexture->LODGroup == TEXTUREGROUP_WorldNormalMap ? 1 : 0);
 		JsonObject->SetNumberField(TEXT("has_mips"), InTexture->MipGenSettings != TMGS_NoMipmaps ? 1 : 0);
+		JsonObject->SetNumberField(TEXT("ibl"), UsedAsIBL ? 1 : 0);
+
+		// Size
+		if (IsTexture2D)
+		{
+			JsonObject->SetNumberField(TEXT("width"), InTexture2D->GetSizeX());
+			JsonObject->SetNumberField(TEXT("height"), InTexture2D->GetSizeY());
+			JsonObject->SetNumberField(TEXT("mips"), InTexture2D->GetNumMips());
+		}
+		else
+		{
+			JsonObject->SetNumberField(TEXT("width"), InTextureCube->GetSizeX());
+			JsonObject->SetNumberField(TEXT("height"), InTextureCube->GetSizeY());
+			JsonObject->SetNumberField(TEXT("mips"), InTextureCube->GetNumMips());
+		}
 
 		if (IsTexture2D)
 		{
@@ -1424,7 +1443,7 @@ void UTiXExporterBPLibrary::ExportReflectionCapture(AReflectionCapture* RCActor,
 				ExportPath.AppendChar('/');
 			FString MapName = CurrentWorld->GetName();
 			FString ExportFullPath = ExportPath + MapName + TEXT("/");
-			ExportTexture(TextureCube, ExportFullPath);
+			ExportTexture(TextureCube, ExportFullPath, true);
 		}
 	}
 }
@@ -1504,6 +1523,35 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	JsonObject->SetNumberField(TEXT("mesh_sections_total"), TotalMeshSections);
 	JsonObject->SetNumberField(TEXT("instances_total"), SceneTile.InstanceCount);
 	JsonObject->SetNumberField(TEXT("texture_total"), Dependency.DependenciesTextures.Num());
+	JsonObject->SetNumberField(TEXT("reflection_captures_total"), SceneTile.ReflectionCaptures.Num());
+
+	// output reflection captures
+	{
+		TArray< TSharedPtr<FJsonValue> > JReflectionCaptures;
+		for (const auto& RCActor : SceneTile.ReflectionCaptures)
+		{
+			TSharedPtr<FJsonObject> JRCActor = MakeShareable(new FJsonObject);
+			JRCActor->SetStringField(TEXT("name"), RCActor->GetName());
+			JRCActor->SetStringField(TEXT("linked_cubemap"), WorldName + TEXT("/TC_") + RCActor->GetName() + TEXT(".tasset"));
+
+			UWorld* CurrentWorld = RCActor->GetWorld();
+			UReflectionCaptureComponent* RCComponent = RCActor->GetCaptureComponent();
+			FReflectionCaptureData ReadbackCaptureData;
+			CurrentWorld->Scene->GetReflectionCaptureData(RCComponent, ReadbackCaptureData);
+			JRCActor->SetNumberField(TEXT("cubemap_size"), ReadbackCaptureData.CubemapSize);
+			JRCActor->SetNumberField(TEXT("average_brightness"), ReadbackCaptureData.AverageBrightness);
+			JRCActor->SetNumberField(TEXT("brightness"), ReadbackCaptureData.Brightness);
+
+			TArray< TSharedPtr<FJsonValue> > JRCPosition;
+			ConvertToJsonArray(RCActor->GetTransform().GetLocation(), JRCPosition);
+			JRCActor->SetArrayField(TEXT("position"), JRCPosition);
+
+			TSharedRef< FJsonValueObject > JsonValue = MakeShareable(new FJsonValueObject(JRCActor));
+			JReflectionCaptures.Add(JsonValue);
+		}
+		JsonObject->SetArrayField(TEXT("reflection_captures"), JReflectionCaptures);
+
+	}
 
 	// output dependencies
 	{
