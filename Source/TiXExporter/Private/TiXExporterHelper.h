@@ -25,6 +25,8 @@ void ConvertToJsonArray(const TArray<FVector>& VectorArray, TArray< TSharedPtr<F
 void ConvertToJsonArray(const TArray<FVector2D>& VectorArray, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const TArray<FTiXVertex>& VertexArray, uint32 VsFormat, TArray< TSharedPtr<FJsonValue> >& OutArray);
 void ConvertToJsonArray(const TArray<FString>& StringArray, TArray< TSharedPtr<FJsonValue> >& OutArray);
+void ConvertToJsonArray(const float* FloatData, int32 Count, TArray< TSharedPtr<FJsonValue> >& OutArray);
+void ConvertToJsonArray(const FSHVectorRGB3& SH3, TArray< TSharedPtr<FJsonValue> >& OutArray);
 
 void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, const FString& Path);
 void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FString& Path);

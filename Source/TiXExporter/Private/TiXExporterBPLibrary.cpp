@@ -11,6 +11,8 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/ReflectionCapture.h"
 #include "Components/ReflectionCaptureComponent.h"
+#include "Runtime/Engine/Classes/Engine/SkyLight.h"
+#include "Runtime/Engine/Classes/Components/SkyLightComponent.h"
 #include "Editor/UnrealEd/Classes/Factories/TextureFactory.h"
 #include "Engine/Classes/Engine/MapBuildDataRegistry.h"
 #include "Runtime/Landscape/Classes/Landscape.h"
@@ -180,6 +182,22 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		}
 	}
 
+	// Collect Sky light
+	TArray< ASkyLight* > SkyLightActors;
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT(" Sky light actors..."));
+		Actors.Empty();
+		UGameplayStatics::GetAllActorsOfClass(Actor, ASkyLight::StaticClass(), Actors);
+		for (auto A : Actors)
+		{
+			if (A->IsHidden())
+				continue;
+			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+			ASkyLight* SkyLightActor = static_cast<ASkyLight*>(A);
+			SkyLightActors.Add(SkyLightActor);
+		}
+	}
+
 	// Collect Reflection Captures
 	TArray< AReflectionCapture* > RCActors;
 	{
@@ -341,6 +359,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		}
 
 		// output env
+		//TODO: Export mainlight and skylight to tiles
 		TSharedPtr<FJsonObject> JEnvironment = MakeShareable(new FJsonObject);
 		TArray<AActor*> SunLights;
 		UGameplayStatics::GetAllActorsOfClass(Actor, ADirectionalLight::StaticClass(), SunLights);
@@ -364,6 +383,29 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 				JSunLight->SetNumberField(TEXT("intensity"), LightComponent->Intensity);
 			}
 			JEnvironment->SetObjectField(TEXT("sun_light"), JSunLight);
+		}
+		TArray<AActor*> SkyLights;
+		UGameplayStatics::GetAllActorsOfClass(Actor, ASkyLight::StaticClass(), SkyLights);
+		if (SkyLights.Num() > 0)
+		{
+			USkyLightComponent::UpdateSkyCaptureContents(CurrentWorld);
+			// Only export 1 sky light
+			TSharedPtr<FJsonObject> JSkyLight = MakeShareable(new FJsonObject);
+			auto A = SkyLights[0];
+			{
+				ASkyLight* SkyLight = static_cast<ASkyLight*>(A);
+				USkyLightComponent* LightComponent = SkyLight->GetLightComponent();
+
+				JSkyLight->SetStringField(TEXT("name"), SkyLight->GetName());
+
+				FSHVectorRGB3 IrradianceEnvironmentMap = LightComponent->GetIrradianceEnvironmentMap();
+
+				TArray< TSharedPtr<FJsonValue> > JIrrEnvMap;
+				ConvertToJsonArray(IrradianceEnvironmentMap, JIrrEnvMap);
+
+				JSkyLight->SetArrayField(TEXT("irradiance_sh3"), JIrrEnvMap);
+			}
+			JEnvironment->SetObjectField(TEXT("sky_light"), JSkyLight);
 		}
 		JsonObject->SetObjectField(TEXT("environment"), JEnvironment);
 

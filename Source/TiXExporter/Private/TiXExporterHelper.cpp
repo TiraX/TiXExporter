@@ -181,6 +181,22 @@ void ConvertToJsonArray(const TArray<FString>& StringArray, TArray< TSharedPtr<F
 	}
 }
 
+void ConvertToJsonArray(const float* FloatData, int32 Count, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	for (int32 i = 0; i < Count; i++)
+	{
+		TSharedRef< FJsonValueNumber > JsonValue = MakeShareable(new FJsonValueNumber(FloatData[i]));
+		OutArray.Add(JsonValue);
+	}
+}
+
+void ConvertToJsonArray(const FSHVectorRGB3& SH3, TArray< TSharedPtr<FJsonValue> >& OutArray)
+{
+	ConvertToJsonArray(SH3.R.V, TSHVector<3>::NumTotalFloats, OutArray);
+	ConvertToJsonArray(SH3.G.V, TSHVector<3>::NumTotalFloats, OutArray);
+	ConvertToJsonArray(SH3.B.V, TSHVector<3>::NumTotalFloats, OutArray);
+}
+
 void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, const FString& Path)
 {
 	FString OutputString;
