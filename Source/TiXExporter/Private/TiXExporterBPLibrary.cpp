@@ -26,6 +26,7 @@
 #include "Runtime/Engine/Classes/Materials/MaterialInstance.h"
 #include "Runtime/Engine/Classes/Engine/Texture2D.h"
 #include "Runtime/Engine/Classes/Engine/TextureCube.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 #include "RawMesh.h"
 #include "Dom/JsonValue.h"
 #include "Dom/JsonObject.h"
@@ -103,7 +104,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	UWorld * CurrentWorld = Actor->GetWorld();
 	ULevel * CurrentLevel = CurrentWorld->GetCurrentLevel();
 
-	TMap<UStaticMesh *, TArray<FTiXInstance> > ActorInstances;
+	TMap<UStaticMesh *, TArray<FTiXInstance> > SMInstances;
+	TMap<USkeletalMesh*, TArray<FTiXInstance> > SKMInstances;
 
 	TArray<AActor*> Actors;
 	int32 a = 0;
@@ -122,7 +124,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			AStaticMeshActor * SMActor = static_cast<AStaticMeshActor*>(A);
 			UStaticMesh * StaticMesh = SMActor->GetStaticMeshComponent()->GetStaticMesh();
 
-			TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
+			TArray<FTiXInstance>& Instances = SMInstances.FindOrAdd(StaticMesh);
 			FTiXInstance InstanceInfo;
 			InstanceInfo.Position = SMActor->GetTransform().GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
 			InstanceInfo.Rotation = SMActor->GetTransform().GetRotation();
@@ -143,6 +145,17 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			if (A->IsHidden())
 				continue;
 			UE_LOG(LogTiXExporter, Log, TEXT(" Actor %d : %s."), a++, *A->GetName());
+
+			ASkeletalMeshActor* SKMActor = static_cast<ASkeletalMeshActor*>(A);
+			USkeletalMesh* SkeletalMesh = SKMActor->GetSkeletalMeshComponent()->SkeletalMesh;
+
+			TArray<FTiXInstance>& Instances = SKMInstances.FindOrAdd(SkeletalMesh);
+			FTiXInstance InstanceInfo;
+			InstanceInfo.Position = SKMActor->GetTransform().GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
+			InstanceInfo.Rotation = SKMActor->GetTransform().GetRotation();
+			InstanceInfo.Scale = SKMActor->GetTransform().GetScale3D();
+			InstanceInfo.Transform = SKMActor->GetTransform();
+			Instances.Add(InstanceInfo);
 		}
 	}
 
@@ -166,7 +179,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 				TArray<FInstancedStaticMeshInstanceData> MeshDataArray = MeshComponent->PerInstanceSMData;
 
 				UStaticMesh * StaticMesh = MeshComponent->GetStaticMesh();
-				TArray<FTiXInstance>& Instances = ActorInstances.FindOrAdd(StaticMesh);
+				TArray<FTiXInstance>& Instances = SMInstances.FindOrAdd(StaticMesh);
 
 				for (auto& MeshMatrix : MeshDataArray)
 				{
@@ -219,16 +232,26 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT("  Static meshes..."));
 
-		for (auto& MeshPair : ActorInstances)
+		for (auto& MeshPair : SMInstances)
 		{
 			UStaticMesh * Mesh = MeshPair.Key;
 			ExportStaticMeshInternal(Mesh, ExportPath, MeshComponents);
 		}
 	}
+	if (ContainComponent(SceneComponents, TEXT("SKELETAL_MESH")))
+	{
+		UE_LOG(LogTiXExporter, Log, TEXT("  Skeletal meshes..."));
+
+		for (auto& MeshPair : SKMInstances)
+		{
+			USkeletalMesh* SkeletalMesh = MeshPair.Key;
+			ExportSkeletalMeshInternal(SkeletalMesh, ExportPath, MeshComponents);
+		}
+	}
 	
 	UE_LOG(LogTiXExporter, Log, TEXT("Scene structure: "));
 	int32 NumInstances = 0;
-	for (const auto& MeshPair : ActorInstances)
+	for (const auto& MeshPair : SMInstances)
 	{
 		const UStaticMesh * Mesh = MeshPair.Key;
 		FString MeshName = Mesh->GetName();
@@ -240,7 +263,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 	// Sort mesh into scene tiles
 	TMap< FIntPoint, FTiXSceneTile> Tiles;
-	for (const auto& MeshPair : ActorInstances)
+	for (const auto& MeshPair : SMInstances)
 	{
 		UStaticMesh * Mesh = MeshPair.Key;
 		const TArray<FTiXInstance>& Instances = MeshPair.Value;
@@ -317,7 +340,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		JsonObject->SetStringField(TEXT("type"), TEXT("scene"));
 		JsonObject->SetNumberField(TEXT("version"), 1);
 		JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles information from TiX exporter."));
-		JsonObject->SetNumberField(TEXT("mesh_total"), ActorInstances.Num());
+		JsonObject->SetNumberField(TEXT("mesh_total"), SMInstances.Num());
 		JsonObject->SetNumberField(TEXT("instances_total"), NumInstances);
 		JsonObject->SetStringField(TEXT("texture_total"), TEXT("Unknown Yet"));
 
@@ -494,7 +517,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 		SaveJsonToFile(JsonObject, CurrentWorld->GetName(), ExportPath);
 	}
-	ActorInstances.Empty();
+	SMInstances.Empty();
 }
 
 void UTiXExporterBPLibrary::ExportStaticMeshActor(AStaticMeshActor * StaticMeshActor, FString ExportPath, const TArray<FString>& Components)
@@ -749,6 +772,223 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 		JsonObject->SetObjectField(TEXT("collisions"), JCollisions);
 
 		SaveJsonToFile(JsonObject, StaticMesh->GetName(), ExportFullPath);
+	}
+}
+
+
+
+void UTiXExporterBPLibrary::ExportSkeletalMeshInternal(USkeletalMesh* SkeletalMesh, FString InExportPath, const TArray<FString>& Components)
+{
+	FString SMPath = GetResourcePath(SkeletalMesh);
+	FString ExportPath = InExportPath;
+	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (ExportPath[ExportPath.Len() - 1] != '/')
+		ExportPath.AppendChar('/');
+	FString ExportFullPath = ExportPath + SMPath;
+
+	FSkeletalMeshRenderData* SKMRenderData = SkeletalMesh->GetResourceForRendering();
+	const int32 TotalLODs = SKMRenderData->LODRenderData.Num();
+
+	USkeleton* Skeleton = SkeletalMesh->Skeleton;
+	FString SkeletonPath = GetResourcePath(Skeleton) + Skeleton->GetName();
+
+	// Export LOD0 only for now.
+	int32 CurrentLOD = 0;
+	FSkeletalMeshLODRenderData& LODResource = SKMRenderData->LODRenderData[CurrentLOD];
+
+	const FStaticMeshVertexBuffer& StaticMeshVertexBuffer = LODResource.StaticVertexBuffers.StaticMeshVertexBuffer;
+	const FPositionVertexBuffer& PositionVertexBuffer = LODResource.StaticVertexBuffers.PositionVertexBuffer;
+	const FColorVertexBuffer& ColorVertexBuffer = LODResource.StaticVertexBuffers.ColorVertexBuffer;
+	const FSkinWeightVertexBuffer& SkinWeightVertexBuffer = LODResource.SkinWeightVertexBuffer;
+	const int32 TotalNumTexCoords = LODResource.StaticVertexBuffers.StaticMeshVertexBuffer.GetNumTexCoords();
+
+	// Get Vertex format
+	uint32 VsFormat = 0;
+	if (PositionVertexBuffer.GetNumVertices() > 0 && ContainComponent(Components, (TEXT("POSITION"))))
+	{
+		VsFormat |= EVSSEG_POSITION;
+	}
+	else
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("Skeletal mesh [%s] do not have position stream."), *SkeletalMesh->GetPathName());
+		return;
+	}
+	if (StaticMeshVertexBuffer.GetNumVertices() > 0)
+	{
+		if (ContainComponent(Components, (TEXT("NORMAL"))))
+			VsFormat |= EVSSEG_NORMAL;
+		if (ContainComponent(Components, (TEXT("TANGENT"))))
+			VsFormat |= EVSSEG_TANGENT;
+	}
+	if (ColorVertexBuffer.GetNumVertices() > 0 && ContainComponent(Components, (TEXT("COLOR"))))
+	{
+		VsFormat |= EVSSEG_COLOR;
+	}
+	if (TotalNumTexCoords > 0 && ContainComponent(Components, (TEXT("TEXCOORD0"))))
+	{
+		VsFormat |= EVSSEG_TEXCOORD0;
+	}
+	if (TotalNumTexCoords > 1 && ContainComponent(Components, (TEXT("TEXCOORD1"))))
+	{
+		VsFormat |= EVSSEG_TEXCOORD1;
+	}
+	if (SkinWeightVertexBuffer.GetNumVertices() > 0)
+	{
+		VsFormat |= EVSSEG_BLENDINDEX;
+		VsFormat |= EVSSEG_BLENDWEIGHT;
+
+		if (SkinWeightVertexBuffer.GetMaxBoneInfluences() > 4)
+		{
+			UE_LOG(LogTiXExporter, Warning, TEXT("Skeletal mesh [%s] have max bone influences > 4."), *SkeletalMesh->GetPathName());
+		}
+	}
+	else
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("Skeletal mesh [%s] do not have Bone Index & Weight stream."), *SkeletalMesh->GetPathName());
+		return;
+	}
+
+	TArray<uint32> MeshIndices;
+	LODResource.MultiSizeIndexContainer.GetIndexBuffer(MeshIndices);
+
+	// data container
+	TArray<FTiXVertex> VertexData;
+	TArray<uint32> IndexData = MeshIndices;
+
+	VertexData.AddZeroed(LODResource.StaticVertexBuffers.PositionVertexBuffer.GetNumVertices());
+
+	TArray<FTiXMeshSection> MeshSections;
+
+	TArray< TSharedPtr<FJsonValue> > JsonSections;
+	for (int32 Section = 0; Section < LODResource.RenderSections.Num(); ++Section)
+	{
+		FSkelMeshRenderSection& MeshSection = LODResource.RenderSections[Section];
+
+		const int32 TotalFaces = MeshSection.NumTriangles;
+		//const int32 MinVertexIndex = MeshSection.MinVertexIndex;
+		//const int32 MaxVertexIndex = MeshSection.MaxVertexIndex;
+		const int32 FirstIndex = MeshSection.BaseIndex;
+
+		// Remember this section
+		FTiXMeshSection TiXSection;
+		TiXSection.NumTriangles = MeshSection.NumTriangles;
+		TiXSection.IndexStart = FirstIndex;
+		MeshSections.Add(TiXSection);
+
+		// Dump section name and material
+		FString MaterialInstancePathName, MaterialSlotName;
+
+		if (TiXExporterSetting.bIgnoreMaterial)
+		{
+			MaterialInstancePathName = TEXT("DebugMaterial");
+			MaterialSlotName = TEXT("DebugMaterialName");
+		}
+		else
+		{
+			MaterialInstancePathName = GetResourcePath(SkeletalMesh->Materials[MeshSection.MaterialIndex].MaterialInterface);
+			MaterialInstancePathName += SkeletalMesh->Materials[MeshSection.MaterialIndex].MaterialInterface->GetName();
+			MaterialSlotName = SkeletalMesh->Materials[MeshSection.MaterialIndex].MaterialSlotName.ToString();
+			ExportMaterialInstance(SkeletalMesh->Materials[MeshSection.MaterialIndex].MaterialInterface, InExportPath);
+		}
+
+		// Collect vertices and indices
+		const int32 MaxIndex = FirstIndex + TotalFaces * 3;
+		for (int32 ii = FirstIndex; ii < MaxIndex; ++ii)
+		{
+			uint32 Index = MeshIndices[ii];
+			check(Index < (uint32)VertexData.Num());
+
+			FTiXVertex Vertex;
+			Vertex.Position = PositionVertexBuffer.VertexPosition(Index) * TiXExporterSetting.MeshVertexPositionScale;
+			if ((VsFormat & EVSSEG_NORMAL) != 0)
+			{
+				Vertex.Normal = StaticMeshVertexBuffer.VertexTangentZ(Index).GetSafeNormal();
+			}
+			if ((VsFormat & EVSSEG_TANGENT) != 0)
+			{
+				Vertex.TangentX = StaticMeshVertexBuffer.VertexTangentX(Index).GetSafeNormal();
+			}
+			if ((VsFormat & EVSSEG_TEXCOORD0) != 0)
+			{
+				Vertex.TexCoords[0] = StaticMeshVertexBuffer.GetVertexUV(Index, 0);
+			}
+			if ((VsFormat & EVSSEG_TEXCOORD1) != 0)
+			{
+				Vertex.TexCoords[1] = StaticMeshVertexBuffer.GetVertexUV(Index, 1);
+			}
+			if ((VsFormat & EVSSEG_COLOR) != 0)
+			{
+				FColor C = ColorVertexBuffer.VertexColor(Index);
+				const float OneOver255 = 1.f / 255.f;
+				Vertex.Color.X = C.R * OneOver255;
+				Vertex.Color.Y = C.G * OneOver255;
+				Vertex.Color.Z = C.B * OneOver255;
+				Vertex.Color.W = C.A * OneOver255;
+			}
+			if ((VsFormat & EVSSEG_BLENDINDEX) != 0)
+			{
+				FSkinWeightInfo Info = SkinWeightVertexBuffer.GetVertexSkinWeights(Index);
+				Vertex.BlendIndex[0] = Info.InfluenceBones[0];
+				Vertex.BlendIndex[1] = Info.InfluenceBones[1];
+				Vertex.BlendIndex[2] = Info.InfluenceBones[2];
+				Vertex.BlendIndex[3] = Info.InfluenceBones[3];
+				Vertex.BlendWeight[0] = Info.InfluenceWeights[0] / 255.f;
+				Vertex.BlendWeight[1] = Info.InfluenceWeights[1] / 255.f;
+				Vertex.BlendWeight[2] = Info.InfluenceWeights[2] / 255.f;
+				Vertex.BlendWeight[3] = Info.InfluenceWeights[3] / 255.f;
+			}
+
+			VertexData[Index] = Vertex;
+		}
+
+		TSharedPtr<FJsonObject> JSection = SaveMeshSectionToJson(TiXSection, MaterialSlotName, MaterialInstancePathName + ExtName);
+
+		// Disable mesh cluster generate in UE4. Make this happen in converter.
+		if (false && TiXExporterSetting.bEnableMeshCluster)
+		{
+			//UE_LOG(LogTiXExporter, Log, TEXT("Generate clusters for [%s]."), *StaticMesh->GetName());
+			//TArray< TSharedPtr<FJsonValue> > JClusters;
+			//GenerateMeshCluster(VertexData, IndexData, JClusters);
+			//JSection->SetArrayField("clusters", JClusters);
+		}
+
+		TSharedRef< FJsonValueObject > JsonSectionValue = MakeShareable(new FJsonValueObject(JSection));
+		JsonSections.Add(JsonSectionValue);
+	}
+
+	// Export mesh data
+	TSharedPtr<FJsonObject> JMeshData = SaveMeshDataToJson(VertexData, IndexData, VsFormat);
+
+	// Export collision infos
+	//TSharedPtr<FJsonObject> JCollisions = ExportMeshCollisions(StaticMesh);
+
+	// output json
+	{
+		TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+
+		// output basic info
+		JsonObject->SetStringField(TEXT("name"), SkeletalMesh->GetName());
+		JsonObject->SetStringField(TEXT("type"), TEXT("skeletal_mesh"));
+		JsonObject->SetNumberField(TEXT("version"), 1);
+		JsonObject->SetStringField(TEXT("desc"), TEXT("Skeletal mesh (Render Resource) from TiX exporter."));
+		JsonObject->SetNumberField(TEXT("vertex_count_total"), VertexData.Num());
+		//LODResource.VertexBuffers.PositionVertexBuffer.GetNumVertices());
+		JsonObject->SetNumberField(TEXT("index_count_total"), IndexData.Num());
+		//MeshIndices.Num());
+		JsonObject->SetNumberField(TEXT("texcoord_count"), TotalNumTexCoords);
+		JsonObject->SetNumberField(TEXT("total_lod"), 1);
+		JsonObject->SetStringField(TEXT("skeleton"), SkeletonPath);
+
+		// output mesh data
+		JsonObject->SetObjectField(TEXT("data"), JMeshData);
+
+		// output mesh sections
+		JsonObject->SetArrayField(TEXT("sections"), JsonSections);
+
+		// output mesh collisions
+		//JsonObject->SetObjectField(TEXT("collisions"), JCollisions);
+
+		SaveJsonToFile(JsonObject, SkeletalMesh->GetName(), ExportFullPath);
 	}
 }
 

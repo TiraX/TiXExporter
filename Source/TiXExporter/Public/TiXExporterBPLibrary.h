@@ -64,7 +64,8 @@ public:
 	static void SetMeshClusterSize(int32 Triangles);
 
 private:
-	static void ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components);
+	static void ExportStaticMeshInternal(UStaticMesh* StaticMesh, FString ExportPath, const TArray<FString>& Components);
+	static void ExportSkeletalMeshInternal(USkeletalMesh* SkeletalMesh, FString ExportPath, const TArray<FString>& Components);
 
 	static void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components);
 	static void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components);
