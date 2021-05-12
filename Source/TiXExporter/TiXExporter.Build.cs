@@ -46,7 +46,8 @@ public class TiXExporter : ModuleRules
                 "RenderCore",
                 "RawMesh",
                 "MeshUtilities",
-                "RHI"
+                "RHI",
+				"JsonUtilities",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

@@ -26,6 +26,52 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTiXExporter, Log, All);
 
+
+USTRUCT()
+struct FTiXBoneInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    int32 index;
+
+    UPROPERTY()
+    FString bone_name;
+
+    UPROPERTY()
+    int32 parent_index;
+    
+    UPROPERTY()
+    FVector translation;
+    
+    UPROPERTY()
+    FQuat rotation;
+    
+    UPROPERTY()
+    FVector scale;
+};
+
+USTRUCT()
+struct FTiXSkeletonInfo
+{
+    GENERATED_BODY()
+		
+    UPROPERTY()
+    FString name;
+		
+    UPROPERTY()
+    FString type;
+	
+    UPROPERTY()
+    int32 version;
+		
+    UPROPERTY()
+    FString desc;
+
+    UPROPERTY()
+    TArray<FTiXBoneInfo> bones;
+};
+
 UCLASS()
 class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
 {
@@ -64,15 +110,14 @@ public:
 	static void SetMeshClusterSize(int32 Triangles);
 
 private:
-	static void ExportStaticMeshInternal(UStaticMesh* StaticMesh, FString ExportPath, const TArray<FString>& Components);
-	static void ExportSkeletalMeshInternal(USkeletalMesh* SkeletalMesh, FString ExportPath, const TArray<FString>& Components);
-
 	static void ExportStaticMeshFromRenderData(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components);
+	static void ExportSkeletalMeshFromRenderData(USkeletalMesh* SkeletalMesh, FString ExportPath, const TArray<FString>& Components);
 	static void ExportStaticMeshFromRawMesh(UStaticMesh* StaticMesh, const FString& Path, const TArray<FString>& Components);
 	static void ExportMaterialInstance(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportTexture(UTexture* InTexture, const FString& Path, bool UsedAsIBL = false);
 	static void ExportReflectionCapture(AReflectionCapture* RCActor, const FString& Path);
+	static void ExportSkeleton(USkeleton* InSkeleton, const FString& Path);
 
 	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
 	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh * InMesh);

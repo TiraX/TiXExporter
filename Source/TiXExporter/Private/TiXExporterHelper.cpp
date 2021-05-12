@@ -215,6 +215,20 @@ void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, con
 	}
 }
 
+void SaveJsonToFile(const FString& JsonString, const FString& Name, const FString& Path)
+{
+	FString ExportPathStr = Path;
+	if (VerifyOrCreateDirectory(ExportPathStr))
+	{
+		FString PathName = ExportPathStr + Name + TEXT(".tjs");
+		FFileHelper::SaveStringToFile(JsonString, *PathName);
+	}
+	else
+	{
+		UE_LOG(LogTiXExporter, Error, TEXT("Failed to create directory : %s."), *ExportPathStr);
+	}
+}
+
 void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FString& Path)
 {
 	FString ExportPathStr = Path;

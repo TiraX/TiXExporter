@@ -29,6 +29,7 @@ void ConvertToJsonArray(const float* FloatData, int32 Count, TArray< TSharedPtr<
 void ConvertToJsonArray(const FSHVectorRGB3& SH3, TArray< TSharedPtr<FJsonValue> >& OutArray);
 
 void SaveJsonToFile(TSharedPtr<FJsonObject> JsonObject, const FString& Name, const FString& Path);
+void SaveJsonToFile(const FString& JsonString, const FString& Name, const FString& Path);
 void SaveUTextureToHDR(UTexture2D* Texture, const FString& FileName, const FString& Path);
 
 // Save mesh vertices and indices

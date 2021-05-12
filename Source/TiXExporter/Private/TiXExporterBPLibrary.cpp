@@ -30,6 +30,7 @@
 #include "RawMesh.h"
 #include "Dom/JsonValue.h"
 #include "Dom/JsonObject.h"
+#include "JsonObjectConverter.h"
 #include "Serialization/JsonWriter.h"
 #include "Serialization/JsonSerializer.h"
 #include "HAL/PlatformFilemanager.h"
@@ -235,7 +236,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		for (auto& MeshPair : SMInstances)
 		{
 			UStaticMesh * Mesh = MeshPair.Key;
-			ExportStaticMeshInternal(Mesh, ExportPath, MeshComponents);
+			ExportStaticMeshFromRenderData(Mesh, ExportPath, MeshComponents);
 		}
 	}
 	if (ContainComponent(SceneComponents, TEXT("SKELETAL_MESH")))
@@ -245,7 +246,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		for (auto& MeshPair : SKMInstances)
 		{
 			USkeletalMesh* SkeletalMesh = MeshPair.Key;
-			ExportSkeletalMeshInternal(SkeletalMesh, ExportPath, MeshComponents);
+			ExportSkeletalMeshFromRenderData(SkeletalMesh, ExportPath, MeshComponents);
 		}
 	}
 	
@@ -527,21 +528,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshActor(AStaticMeshActor * StaticMeshA
 
 void UTiXExporterBPLibrary::ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components)
 {
-	ExportStaticMeshInternal(StaticMesh, ExportPath, Components);
-}
-
-void UTiXExporterBPLibrary::ExportStaticMeshInternal(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components)
-{
-	if (StaticMesh->bAllowCPUAccess)
-	{
-		UE_LOG(LogTiXExporter, Log, TEXT("Exporting Static Mesh: %s to %s."), *StaticMesh->GetName(), *ExportPath);
-		ExportStaticMeshFromRenderData(StaticMesh, ExportPath, Components);
-	}
-	else
-	{
-		UE_LOG(LogTiXExporter, Error, TEXT("Exporting Static Mesh: %s to %s. Mesh do not have CPU Access, export from RawMesh"), *StaticMesh->GetName(), *ExportPath);
-		//ExportStaticMeshFromRawMesh(StaticMesh, ExportFullPath, Components);
-	}
+	ExportStaticMeshFromRenderData(StaticMesh, ExportPath, Components);
 }
 
 void GenerateMeshCluster(const TArray<FTiXVertex>& InVertices, const TArray<int32>& InIndices, TArray< TSharedPtr<FJsonValue> >& OutJClusters)
@@ -775,9 +762,7 @@ void UTiXExporterBPLibrary::ExportStaticMeshFromRenderData(UStaticMesh* StaticMe
 	}
 }
 
-
-
-void UTiXExporterBPLibrary::ExportSkeletalMeshInternal(USkeletalMesh* SkeletalMesh, FString InExportPath, const TArray<FString>& Components)
+void UTiXExporterBPLibrary::ExportSkeletalMeshFromRenderData(USkeletalMesh* SkeletalMesh, FString InExportPath, const TArray<FString>& Components)
 {
 	FString SMPath = GetResourcePath(SkeletalMesh);
 	FString ExportPath = InExportPath;
@@ -790,7 +775,8 @@ void UTiXExporterBPLibrary::ExportSkeletalMeshInternal(USkeletalMesh* SkeletalMe
 	const int32 TotalLODs = SKMRenderData->LODRenderData.Num();
 
 	USkeleton* Skeleton = SkeletalMesh->Skeleton;
-	FString SkeletonPath = GetResourcePath(Skeleton) + Skeleton->GetName();
+	FString SkeletonPath = GetResourcePath(Skeleton) + Skeleton->GetName() + TEXT(".tasset");
+	ExportSkeleton(Skeleton, InExportPath);
 
 	// Export LOD0 only for now.
 	int32 CurrentLOD = 0;
@@ -990,6 +976,49 @@ void UTiXExporterBPLibrary::ExportSkeletalMeshInternal(USkeletalMesh* SkeletalMe
 
 		SaveJsonToFile(JsonObject, SkeletalMesh->GetName(), ExportFullPath);
 	}
+}
+
+void UTiXExporterBPLibrary::ExportSkeleton(USkeleton* InSkeleton, const FString& InExportPath)
+{
+	FString Path = GetResourcePath(InSkeleton);
+	FString ExportPath = InExportPath;
+	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (ExportPath[ExportPath.Len() - 1] != '/')
+		ExportPath.AppendChar('/');
+	FString ExportFullPath = ExportPath + Path;
+
+	// Skeleton infos
+	const FReferenceSkeleton& RefSkeleton = InSkeleton->GetReferenceSkeleton();
+	const int32 RawBoneNum = RefSkeleton.GetRawBoneNum();
+	const TArray<FMeshBoneInfo>& BoneInfos = RefSkeleton.GetRawRefBoneInfo();
+	const TArray<FTransform>& BonePoses = RefSkeleton.GetRawRefBonePose();
+
+	FTiXSkeletonInfo SkeletonInfo;
+	SkeletonInfo.name = InSkeleton->GetName();
+	SkeletonInfo.type = TEXT("skeleton");
+	SkeletonInfo.version = 1;
+	SkeletonInfo.desc = TEXT("Skeleton from TiX exporter.");
+	SkeletonInfo.bones.Reserve(RawBoneNum);
+
+	for (int32 i = 0; i < RawBoneNum; i++)
+	{
+		const FMeshBoneInfo& Info = BoneInfos[i];
+		const FTransform& Trans = BonePoses[i];
+
+		FTiXBoneInfo TiXBoneInfo;
+		TiXBoneInfo.index = i;
+		TiXBoneInfo.bone_name = Info.Name.ToString();
+		TiXBoneInfo.parent_index = Info.ParentIndex;
+		TiXBoneInfo.translation = Trans.GetTranslation();
+		TiXBoneInfo.rotation = Trans.GetRotation();
+		TiXBoneInfo.scale = Trans.GetScale3D();
+
+		SkeletonInfo.bones.Add(TiXBoneInfo);
+	}
+
+	FString JsonStr;
+	FJsonObjectConverter::UStructToJsonObjectString(SkeletonInfo, JsonStr);
+	SaveJsonToFile(JsonStr, InSkeleton->GetName(), *ExportFullPath);
 }
 
 TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshCollisions(const UStaticMesh * InMesh)
