@@ -1052,6 +1052,7 @@ void UTiXExporterBPLibrary::ExportAnimationAsset(UAnimationAsset* InAnimAsset, F
 	FString ExportFullPath = ExportPath + Path;
 
 	USkeleton* Skeleton = InAnimAsset->GetSkeleton();
+	FString SkeletonPath = GetResourcePath(Skeleton) + Skeleton->GetName() + TEXT(".tasset");
 	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
 	const TArray<FMeshBoneInfo>& BoneInfos = RefSkeleton.GetRawRefBoneInfo();
 
@@ -1070,6 +1071,7 @@ void UTiXExporterBPLibrary::ExportAnimationAsset(UAnimationAsset* InAnimAsset, F
 	AnimAsset.desc = TEXT("Anim Sequence from TiX exporter.");
 	AnimAsset.total_frames = NumFrames;
 	AnimAsset.total_tracks = AnimData.Num();
+	AnimAsset.ref_skeleton = SkeletonPath;
 	AnimAsset.tracks.Reserve(AnimData.Num());
 
 	for (int32 i = 0; i < AnimData.Num(); i++)

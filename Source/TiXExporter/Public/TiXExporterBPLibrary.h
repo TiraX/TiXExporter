@@ -125,6 +125,9 @@ struct FTiXAnimationAsset
 
 	UPROPERTY()
 	int32 total_tracks;
+	
+	UPROPERTY()
+	FString ref_skeleton;
 
     UPROPERTY()
     TArray<FTiXTrackInfo> tracks;
