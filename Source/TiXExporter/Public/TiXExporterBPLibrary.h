@@ -26,7 +26,7 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTiXExporter, Log, All);
 
-
+// Skeleton
 USTRUCT()
 struct FTiXBoneInfo
 {
@@ -52,7 +52,7 @@ struct FTiXBoneInfo
 };
 
 USTRUCT()
-struct FTiXSkeletonInfo
+struct FTiXSkeletonAsset
 {
     GENERATED_BODY()
 		
@@ -68,9 +68,68 @@ struct FTiXSkeletonInfo
     UPROPERTY()
     FString desc;
 
+	UPROPERTY()
+	int32 total_bones;
+
     UPROPERTY()
     TArray<FTiXBoneInfo> bones;
 };
+
+// Animation Asset
+USTRUCT()
+struct FTiXTrackInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    int32 index;
+
+	UPROPERTY()
+	int32 ref_bone_index;
+
+    UPROPERTY()
+    FString ref_bone;
+	    
+	/** Position keys. */
+	UPROPERTY()
+	TArray<FVector> pos_keys;
+
+	/** Rotation keys. */
+	UPROPERTY()
+	TArray<FQuat> rot_keys;
+
+	/** Scale keys. */
+	UPROPERTY()
+	TArray<FVector> scale_keys;
+};
+
+USTRUCT()
+struct FTiXAnimationAsset
+{
+    GENERATED_BODY()
+		
+    UPROPERTY()
+    FString name;
+		
+    UPROPERTY()
+    FString type;
+	
+    UPROPERTY()
+    int32 version;
+		
+    UPROPERTY()
+    FString desc;
+
+	UPROPERTY()
+	int32 total_frames;
+
+	UPROPERTY()
+	int32 total_tracks;
+
+    UPROPERTY()
+    TArray<FTiXTrackInfo> tracks;
+};
+
 
 UCLASS()
 class UTiXExporterBPLibrary : public UBlueprintFunctionLibrary
@@ -118,6 +177,7 @@ private:
 	static void ExportTexture(UTexture* InTexture, const FString& Path, bool UsedAsIBL = false);
 	static void ExportReflectionCapture(AReflectionCapture* RCActor, const FString& Path);
 	static void ExportSkeleton(USkeleton* InSkeleton, const FString& Path);
+	static void ExportAnimationAsset(UAnimationAsset* InAnimAsset, FString ExportPath);
 
 	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
 	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh * InMesh);

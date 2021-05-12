@@ -48,6 +48,7 @@ public class TiXExporter : ModuleRules
                 "MeshUtilities",
                 "RHI",
 				"JsonUtilities",
+				"AnimationCore",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

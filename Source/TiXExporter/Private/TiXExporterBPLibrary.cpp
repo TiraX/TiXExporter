@@ -11,6 +11,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/ReflectionCapture.h"
 #include "Components/ReflectionCaptureComponent.h"
+#include "Runtime/Engine/Classes/Animation/AnimSingleNodeInstance.h"
 #include "Runtime/Engine/Classes/Engine/SkyLight.h"
 #include "Runtime/Engine/Classes/Components/SkyLightComponent.h"
 #include "Editor/UnrealEd/Classes/Factories/TextureFactory.h"
@@ -107,6 +108,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 	TMap<UStaticMesh *, TArray<FTiXInstance> > SMInstances;
 	TMap<USkeletalMesh*, TArray<FTiXInstance> > SKMInstances;
+	TMap<USkeletalMesh*, UAnimationAsset* > RelatedAnimations;
 
 	TArray<AActor*> Actors;
 	int32 a = 0;
@@ -149,6 +151,17 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 
 			ASkeletalMeshActor* SKMActor = static_cast<ASkeletalMeshActor*>(A);
 			USkeletalMesh* SkeletalMesh = SKMActor->GetSkeletalMeshComponent()->SkeletalMesh;
+
+			if (SKMActor->GetSkeletalMeshComponent()->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
+			{
+				// If Use Animation Asset, Export UAnimationAsset
+				UAnimSingleNodeInstance* SingleNodeInstance = SKMActor->GetSkeletalMeshComponent()->GetSingleNodeInstance();
+				UAnimationAsset* AnimAsset = SingleNodeInstance->CurrentAsset;
+				if (AnimAsset->IsA<UAnimSequence>())
+				{
+					RelatedAnimations.FindOrAdd(SkeletalMesh) = AnimAsset;
+				}
+			}
 
 			TArray<FTiXInstance>& Instances = SKMInstances.FindOrAdd(SkeletalMesh);
 			FTiXInstance InstanceInfo;
@@ -242,11 +255,18 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	if (ContainComponent(SceneComponents, TEXT("SKELETAL_MESH")))
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT("  Skeletal meshes..."));
-
 		for (auto& MeshPair : SKMInstances)
 		{
 			USkeletalMesh* SkeletalMesh = MeshPair.Key;
 			ExportSkeletalMeshFromRenderData(SkeletalMesh, ExportPath, MeshComponents);
+		}
+
+		UE_LOG(LogTiXExporter, Log, TEXT("  Related Animations..."));
+		for (auto& AnimPair : RelatedAnimations)
+		{
+			USkeletalMesh* SkeletalMesh = AnimPair.Key;
+			UAnimationAsset* AnimAsset = AnimPair.Value;
+			ExportAnimationAsset(AnimAsset, ExportPath);
 		}
 	}
 	
@@ -993,12 +1013,13 @@ void UTiXExporterBPLibrary::ExportSkeleton(USkeleton* InSkeleton, const FString&
 	const TArray<FMeshBoneInfo>& BoneInfos = RefSkeleton.GetRawRefBoneInfo();
 	const TArray<FTransform>& BonePoses = RefSkeleton.GetRawRefBonePose();
 
-	FTiXSkeletonInfo SkeletonInfo;
-	SkeletonInfo.name = InSkeleton->GetName();
-	SkeletonInfo.type = TEXT("skeleton");
-	SkeletonInfo.version = 1;
-	SkeletonInfo.desc = TEXT("Skeleton from TiX exporter.");
-	SkeletonInfo.bones.Reserve(RawBoneNum);
+	FTiXSkeletonAsset SkeletonAsset;
+	SkeletonAsset.name = InSkeleton->GetName();
+	SkeletonAsset.type = TEXT("skeleton");
+	SkeletonAsset.version = 1;
+	SkeletonAsset.desc = TEXT("Skeleton from TiX exporter.");
+	SkeletonAsset.total_bones = RawBoneNum;
+	SkeletonAsset.bones.Reserve(RawBoneNum);
 
 	for (int32 i = 0; i < RawBoneNum; i++)
 	{
@@ -1013,12 +1034,61 @@ void UTiXExporterBPLibrary::ExportSkeleton(USkeleton* InSkeleton, const FString&
 		TiXBoneInfo.rotation = Trans.GetRotation();
 		TiXBoneInfo.scale = Trans.GetScale3D();
 
-		SkeletonInfo.bones.Add(TiXBoneInfo);
+		SkeletonAsset.bones.Add(TiXBoneInfo);
 	}
 
 	FString JsonStr;
-	FJsonObjectConverter::UStructToJsonObjectString(SkeletonInfo, JsonStr);
+	FJsonObjectConverter::UStructToJsonObjectString(SkeletonAsset, JsonStr);
 	SaveJsonToFile(JsonStr, InSkeleton->GetName(), *ExportFullPath);
+}
+
+void UTiXExporterBPLibrary::ExportAnimationAsset(UAnimationAsset* InAnimAsset, FString InExportPath)
+{
+	FString Path = GetResourcePath(InAnimAsset);
+	FString ExportPath = InExportPath;
+	ExportPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (ExportPath[ExportPath.Len() - 1] != '/')
+		ExportPath.AppendChar('/');
+	FString ExportFullPath = ExportPath + Path;
+
+	USkeleton* Skeleton = InAnimAsset->GetSkeleton();
+	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
+	const TArray<FMeshBoneInfo>& BoneInfos = RefSkeleton.GetRawRefBoneInfo();
+
+	UAnimSequence* AnimSequence = Cast<UAnimSequence>(InAnimAsset);
+	const int32 NumFrames = AnimSequence->GetRawNumberOfFrames();
+	const TArray<FRawAnimSequenceTrack>& AnimData = AnimSequence->GetRawAnimationData();
+	const TArray<FTrackToSkeletonMap>& TrackToSkeMap = AnimSequence->GetRawTrackToSkeletonMapTable();
+
+	check(BoneInfos.Num() == AnimData.Num());
+	check(BoneInfos.Num() == TrackToSkeMap.Num());
+
+	FTiXAnimationAsset AnimAsset;
+	AnimAsset.name = InAnimAsset->GetName();
+	AnimAsset.type = TEXT("animation");
+	AnimAsset.version = 1;
+	AnimAsset.desc = TEXT("Anim Sequence from TiX exporter.");
+	AnimAsset.total_frames = NumFrames;
+	AnimAsset.total_tracks = AnimData.Num();
+	AnimAsset.tracks.Reserve(AnimData.Num());
+
+	for (int32 i = 0; i < AnimData.Num(); i++)
+	{
+		FTiXTrackInfo TrackInfo;
+		TrackInfo.index = i;
+		int32 BoneIndex = TrackToSkeMap[i].BoneTreeIndex;
+		TrackInfo.ref_bone_index = BoneIndex;
+		TrackInfo.ref_bone = BoneInfos[BoneIndex].Name.ToString();
+		TrackInfo.pos_keys = AnimData[i].PosKeys;
+		TrackInfo.rot_keys = AnimData[i].RotKeys;
+		TrackInfo.scale_keys = AnimData[i].ScaleKeys;
+
+		AnimAsset.tracks.Add(TrackInfo);
+	}
+
+	FString JsonStr;
+	FJsonObjectConverter::UStructToJsonObjectString(AnimAsset, JsonStr);
+	SaveJsonToFile(JsonStr, InAnimAsset->GetName(), *ExportFullPath);
 }
 
 TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshCollisions(const UStaticMesh * InMesh)
