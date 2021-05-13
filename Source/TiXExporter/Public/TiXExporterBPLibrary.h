@@ -42,13 +42,13 @@ struct FTiXBoneInfo
     int32 parent_index;
     
     UPROPERTY()
-    FVector translation;
+    TArray<float> translation;
     
     UPROPERTY()
-    FQuat rotation;
+    TArray<float> rotation;
     
     UPROPERTY()
-    FVector scale;
+    TArray<float> scale;
 };
 
 USTRUCT()
@@ -92,15 +92,15 @@ struct FTiXTrackInfo
 	    
 	/** Position keys. */
 	UPROPERTY()
-	TArray<FVector> pos_keys;
+	TArray<float> pos_keys;
 
 	/** Rotation keys. */
 	UPROPERTY()
-	TArray<FQuat> rot_keys;
+	TArray<float> rot_keys;
 
 	/** Scale keys. */
 	UPROPERTY()
-	TArray<FVector> scale_keys;
+	TArray<float> scale_keys;
 };
 
 USTRUCT()

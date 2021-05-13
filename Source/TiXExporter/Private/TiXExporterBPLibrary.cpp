@@ -282,8 +282,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		NumInstances += Instances.Num();
 	}
 
-	// Sort mesh into scene tiles
 	TMap< FIntPoint, FTiXSceneTile> Tiles;
+	// Sort static mesh into scene tiles
 	for (const auto& MeshPair : SMInstances)
 	{
 		UStaticMesh * Mesh = MeshPair.Key;
@@ -304,7 +304,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			Tile.TileSize = TiXExporterSetting.TileSize;
 
 			// Add instances
-			TArray<FTiXInstance>& TileInstances = Tile.TileInstances.FindOrAdd(Mesh);
+			TArray<FTiXInstance>& TileInstances = Tile.TileSMInstances.FindOrAdd(Mesh);
 			TileInstances.Add(Ins);
 
 			// Add instances count
@@ -313,6 +313,49 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			// Recalc bounding box of this tile
 			FBox MeshBBox = Mesh->GetBoundingBox();
 
+			FBox TranslatedBox = MeshBBox.TransformBy(Ins.Transform);
+			TranslatedBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
+			TranslatedBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
+
+			if (Tile.BBox.Min == FVector::ZeroVector && Tile.BBox.Max == FVector::ZeroVector)
+			{
+				Tile.BBox = TranslatedBox;
+			}
+			else
+			{
+				Tile.BBox += TranslatedBox;
+			}
+		}
+	}
+	// Sort skeletal mesh into scene tiles
+	for (const auto& MeshPair : SKMInstances)
+	{
+		USkeletalMesh* Mesh = MeshPair.Key;
+		const TArray<FTiXInstance>& Instances = MeshPair.Value;
+
+		for (const auto& Ins : Instances)
+		{
+			if (FMath::IsNaN(Ins.Position.X) ||
+				FMath::IsNaN(Ins.Position.Y) ||
+				FMath::IsNaN(Ins.Position.Z))
+			{
+				continue;
+			}
+			FIntPoint InsPoint = GetPointByPosition(Ins.Position, TiXExporterSetting.TileSize);
+			FTiXSceneTile& Tile = Tiles.FindOrAdd(InsPoint);
+
+			Tile.Position = InsPoint;
+			Tile.TileSize = TiXExporterSetting.TileSize;
+
+			// Add instances
+			TArray<FTiXInstance>& TileInstances = Tile.TileSKMInstances.FindOrAdd(Mesh);
+			TileInstances.Add(Ins);
+
+			// Add instances count
+			++Tile.InstanceCount;
+
+			// Recalc bounding box of this tile
+			FBox MeshBBox = Mesh->GetImportedBounds().GetBox();
 			FBox TranslatedBox = MeshBBox.TransformBy(Ins.Transform);
 			TranslatedBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
 			TranslatedBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
@@ -1030,9 +1073,19 @@ void UTiXExporterBPLibrary::ExportSkeleton(USkeleton* InSkeleton, const FString&
 		TiXBoneInfo.index = i;
 		TiXBoneInfo.bone_name = Info.Name.ToString();
 		TiXBoneInfo.parent_index = Info.ParentIndex;
-		TiXBoneInfo.translation = Trans.GetTranslation();
-		TiXBoneInfo.rotation = Trans.GetRotation();
-		TiXBoneInfo.scale = Trans.GetScale3D();
+		FVector Translation = Trans.GetTranslation();
+		FQuat Rotation = Trans.GetRotation();
+		FVector Scale = Trans.GetScale3D();
+		TiXBoneInfo.translation.Add(Translation.X);
+		TiXBoneInfo.translation.Add(Translation.Y);
+		TiXBoneInfo.translation.Add(Translation.Z);
+		TiXBoneInfo.rotation.Add(Rotation.X);
+		TiXBoneInfo.rotation.Add(Rotation.Y);
+		TiXBoneInfo.rotation.Add(Rotation.Z);
+		TiXBoneInfo.rotation.Add(Rotation.W);
+		TiXBoneInfo.scale.Add(Scale.X);
+		TiXBoneInfo.scale.Add(Scale.Y);
+		TiXBoneInfo.scale.Add(Scale.Z);
 
 		SkeletonAsset.bones.Add(TiXBoneInfo);
 	}
@@ -1081,9 +1134,33 @@ void UTiXExporterBPLibrary::ExportAnimationAsset(UAnimationAsset* InAnimAsset, F
 		int32 BoneIndex = TrackToSkeMap[i].BoneTreeIndex;
 		TrackInfo.ref_bone_index = BoneIndex;
 		TrackInfo.ref_bone = BoneInfos[BoneIndex].Name.ToString();
-		TrackInfo.pos_keys = AnimData[i].PosKeys;
-		TrackInfo.rot_keys = AnimData[i].RotKeys;
-		TrackInfo.scale_keys = AnimData[i].ScaleKeys;
+
+		check(AnimData[i].PosKeys.Num() == 0 || AnimData[i].PosKeys.Num() == 1 || AnimData[i].PosKeys.Num() == NumFrames);
+		check(AnimData[i].RotKeys.Num() == 0 || AnimData[i].RotKeys.Num() == 1 || AnimData[i].RotKeys.Num() == NumFrames);
+		check(AnimData[i].ScaleKeys.Num() == 0 || AnimData[i].ScaleKeys.Num() == 1 || AnimData[i].ScaleKeys.Num() == NumFrames);
+		
+		TrackInfo.pos_keys.Reserve(AnimData[i].PosKeys.Num() * 3);
+		for (const auto& K : AnimData[i].PosKeys)
+		{
+			TrackInfo.pos_keys.Add(K.X);
+			TrackInfo.pos_keys.Add(K.Y);
+			TrackInfo.pos_keys.Add(K.Z);
+		}
+		TrackInfo.rot_keys.Reserve(AnimData[i].RotKeys.Num() * 4);
+		for (const auto& K : AnimData[i].RotKeys)
+		{
+			TrackInfo.rot_keys.Add(K.X);
+			TrackInfo.rot_keys.Add(K.Y);
+			TrackInfo.rot_keys.Add(K.Z);
+			TrackInfo.rot_keys.Add(K.W);
+		}
+		TrackInfo.scale_keys.Reserve(AnimData[i].ScaleKeys.Num() * 3);
+		for (const auto& K : AnimData[i].ScaleKeys)
+		{
+			TrackInfo.scale_keys.Add(K.X);
+			TrackInfo.scale_keys.Add(K.Y);
+			TrackInfo.scale_keys.Add(K.Z);
+		}
 
 		AnimAsset.tracks.Add(TrackInfo);
 	}
@@ -1870,7 +1947,7 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 {
 	// Get dependencies
 	FDependency Dependency;
-	for (const auto& MeshIns : SceneTile.TileInstances)
+	for (const auto& MeshIns : SceneTile.TileSMInstances)
 	{
 		const UStaticMesh * Mesh = MeshIns.Key;
 		GetStaticMeshDependency(Mesh, InExportPath, Dependency);
@@ -1895,14 +1972,14 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	// Calculate total mesh sections
 	int32 TotalMeshSections = 0;
 	const int32 CurrentLOD = 0;
-	for (const auto& MeshIns : SceneTile.TileInstances)
+	for (const auto& MeshIns : SceneTile.TileSMInstances)
 	{
 		const UStaticMesh * Mesh = MeshIns.Key;
 		FStaticMeshLODResources& LODResource = Mesh->RenderData->LODResources[CurrentLOD];
 		TotalMeshSections += LODResource.Sections.Num();
 	}
 
-	JsonObject->SetNumberField(TEXT("meshes_total"), SceneTile.TileInstances.Num());
+	JsonObject->SetNumberField(TEXT("meshes_total"), SceneTile.TileSMInstances.Num());
 	JsonObject->SetNumberField(TEXT("mesh_sections_total"), TotalMeshSections);
 	JsonObject->SetNumberField(TEXT("instances_total"), SceneTile.InstanceCount);
 	JsonObject->SetNumberField(TEXT("texture_total"), Dependency.DependenciesTextures.Num());
@@ -1970,7 +2047,7 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	// Export mesh instances
 	{
 		TArray< TSharedPtr<FJsonValue> > JMeshInstances;
-		for (const auto& MeshIns : SceneTile.TileInstances)
+		for (const auto& MeshIns : SceneTile.TileSMInstances)
 		{
 			const UStaticMesh * Mesh = MeshIns.Key;
 			const TArray< FTiXInstance>& Instances = MeshIns.Value;

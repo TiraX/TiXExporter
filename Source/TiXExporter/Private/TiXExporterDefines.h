@@ -98,7 +98,8 @@ struct FTiXSceneTile
 	int32 InstanceCount;
 	FBox BBox;
 
-	TMap<UStaticMesh*, TArray<FTiXInstance> > TileInstances;
+	TMap<UStaticMesh*, TArray<FTiXInstance> > TileSMInstances;
+	TMap<USkeletalMesh*, TArray<FTiXInstance> > TileSKMInstances;
 	TArray< AReflectionCapture* > ReflectionCaptures;
 
 	FTiXSceneTile()
