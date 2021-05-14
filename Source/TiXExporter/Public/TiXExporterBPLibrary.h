@@ -124,6 +124,12 @@ struct FTiXAnimationAsset
 	int32 total_frames;
 
 	UPROPERTY()
+	float sequence_length;
+
+	UPROPERTY()
+	float rate_scale;
+
+	UPROPERTY()
 	int32 total_tracks;
 	
 	UPROPERTY()
@@ -182,10 +188,13 @@ private:
 	static void ExportSkeleton(USkeleton* InSkeleton, const FString& Path);
 	static void ExportAnimationAsset(UAnimationAsset* InAnimAsset, FString ExportPath);
 
-	static TSharedPtr<FJsonObject> ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
-	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh * InMesh);
+	static TSharedPtr<FJsonObject> ExportStaticMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
+	static TSharedPtr<FJsonObject> ExportSkeletalMeshActors(const USkeletalMesh* InMesh, const TArray<ASkeletalMeshActor*>& Actors);
+	static TSharedPtr<FJsonObject> ExportMeshCollisions(const UStaticMesh* InMesh);
 
 	static void ExportSceneTile(const FTiXSceneTile& SceneTile, const FString& WorldName, const FString& InExportName);
 
-	static void GetStaticMeshDependency(const UStaticMesh * StaticMesh, const FString& InExportPath, FDependency& Dependency);
+	static void GetStaticMeshDependency(const UStaticMesh* StaticMesh, const FString& InExportPath, FDependency& Dependency);
+	static void GetSkeletalMeshDependency(const USkeletalMesh* StaticMesh, const FString& InExportPath, FDependency& Dependency);
+	static void GetAnimSequenceDependency(const ASkeletalMeshActor* SKMActor, const FString& InExportPath, FDependency& Dependency);
 };

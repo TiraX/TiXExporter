@@ -85,7 +85,7 @@ inline FIntPoint GetPointByPosition(const FVector& Position, float TileSize)
 	{
 		X -= 1.f;
 	}
-	if (Y < 1.f)
+	if (Y < 0.f)
 	{
 		Y -= 1.f;
 	}
@@ -107,7 +107,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	ULevel * CurrentLevel = CurrentWorld->GetCurrentLevel();
 
 	TMap<UStaticMesh *, TArray<FTiXInstance> > SMInstances;
-	TMap<USkeletalMesh*, TArray<FTiXInstance> > SKMInstances;
+	TMap<USkeletalMesh*, TArray<ASkeletalMeshActor*> > SKMActors;
 	TMap<USkeletalMesh*, UAnimationAsset* > RelatedAnimations;
 
 	TArray<AActor*> Actors;
@@ -163,13 +163,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 				}
 			}
 
-			TArray<FTiXInstance>& Instances = SKMInstances.FindOrAdd(SkeletalMesh);
-			FTiXInstance InstanceInfo;
-			InstanceInfo.Position = SKMActor->GetTransform().GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
-			InstanceInfo.Rotation = SKMActor->GetTransform().GetRotation();
-			InstanceInfo.Scale = SKMActor->GetTransform().GetScale3D();
-			InstanceInfo.Transform = SKMActor->GetTransform();
-			Instances.Add(InstanceInfo);
+			TArray<ASkeletalMeshActor*>& TileActors = SKMActors.FindOrAdd(SkeletalMesh);
+			TileActors.Add(SKMActor);
 		}
 	}
 
@@ -255,7 +250,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	if (ContainComponent(SceneComponents, TEXT("SKELETAL_MESH")))
 	{
 		UE_LOG(LogTiXExporter, Log, TEXT("  Skeletal meshes..."));
-		for (auto& MeshPair : SKMInstances)
+		for (auto& MeshPair : SKMActors)
 		{
 			USkeletalMesh* SkeletalMesh = MeshPair.Key;
 			ExportSkeletalMeshFromRenderData(SkeletalMesh, ExportPath, MeshComponents);
@@ -271,7 +266,8 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 	}
 	
 	UE_LOG(LogTiXExporter, Log, TEXT("Scene structure: "));
-	int32 NumInstances = 0;
+	// Calc total static mesh instances
+	int32 NumSMInstances = 0;
 	for (const auto& MeshPair : SMInstances)
 	{
 		const UStaticMesh * Mesh = MeshPair.Key;
@@ -279,8 +275,20 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		const TArray<FTiXInstance>& Instances = MeshPair.Value;
 
 		UE_LOG(LogTiXExporter, Log, TEXT("  %s : %d instances."), *MeshName, Instances.Num());
-		NumInstances += Instances.Num();
+		NumSMInstances += Instances.Num();
 	}
+	// Calc total skeletal mesh actors
+	int32 NumSKMActors = 0;
+	for (const auto& MeshPair : SKMActors)
+	{
+		const USkeletalMesh* Mesh = MeshPair.Key;
+		FString MeshName = Mesh->GetName();
+		const TArray<ASkeletalMeshActor*>& _Actors = MeshPair.Value;
+
+		UE_LOG(LogTiXExporter, Log, TEXT("  %s : %d actors."), *MeshName, _Actors.Num());
+		NumSKMActors += _Actors.Num();
+	}
+
 
 	TMap< FIntPoint, FTiXSceneTile> Tiles;
 	// Sort static mesh into scene tiles
@@ -308,7 +316,7 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 			TileInstances.Add(Ins);
 
 			// Add instances count
-			++Tile.InstanceCount;
+			++Tile.SMInstanceCount;
 
 			// Recalc bounding box of this tile
 			FBox MeshBBox = Mesh->GetBoundingBox();
@@ -328,35 +336,36 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		}
 	}
 	// Sort skeletal mesh into scene tiles
-	for (const auto& MeshPair : SKMInstances)
+	for (const auto& MeshPair : SKMActors)
 	{
 		USkeletalMesh* Mesh = MeshPair.Key;
-		const TArray<FTiXInstance>& Instances = MeshPair.Value;
+		const TArray<ASkeletalMeshActor*>& _Actors = MeshPair.Value;
 
-		for (const auto& Ins : Instances)
+		for (const auto& A : _Actors)
 		{
-			if (FMath::IsNaN(Ins.Position.X) ||
-				FMath::IsNaN(Ins.Position.Y) ||
-				FMath::IsNaN(Ins.Position.Z))
+			FVector Position = A->GetTransform().GetLocation() * TiXExporterSetting.MeshVertexPositionScale;
+			if (FMath::IsNaN(Position.X) ||
+				FMath::IsNaN(Position.Y) ||
+				FMath::IsNaN(Position.Z))
 			{
 				continue;
 			}
-			FIntPoint InsPoint = GetPointByPosition(Ins.Position, TiXExporterSetting.TileSize);
+			FIntPoint InsPoint = GetPointByPosition(Position, TiXExporterSetting.TileSize);
 			FTiXSceneTile& Tile = Tiles.FindOrAdd(InsPoint);
 
 			Tile.Position = InsPoint;
 			Tile.TileSize = TiXExporterSetting.TileSize;
 
 			// Add instances
-			TArray<FTiXInstance>& TileInstances = Tile.TileSKMInstances.FindOrAdd(Mesh);
-			TileInstances.Add(Ins);
+			TArray<ASkeletalMeshActor*>& TileActors = Tile.TileSKMActors.FindOrAdd(Mesh);
+			TileActors.Add(A);
 
 			// Add instances count
-			++Tile.InstanceCount;
+			++Tile.SKMActorCount;
 
 			// Recalc bounding box of this tile
 			FBox MeshBBox = Mesh->GetImportedBounds().GetBox();
-			FBox TranslatedBox = MeshBBox.TransformBy(Ins.Transform);
+			FBox TranslatedBox = MeshBBox.TransformBy(A->GetTransform());
 			TranslatedBox.Min *= TiXExporterSetting.MeshVertexPositionScale;
 			TranslatedBox.Max *= TiXExporterSetting.MeshVertexPositionScale;
 
@@ -404,9 +413,9 @@ void UTiXExporterBPLibrary::ExportCurrentScene(
 		JsonObject->SetStringField(TEXT("type"), TEXT("scene"));
 		JsonObject->SetNumberField(TEXT("version"), 1);
 		JsonObject->SetStringField(TEXT("desc"), TEXT("Scene tiles information from TiX exporter."));
-		JsonObject->SetNumberField(TEXT("mesh_total"), SMInstances.Num());
-		JsonObject->SetNumberField(TEXT("instances_total"), NumInstances);
-		JsonObject->SetStringField(TEXT("texture_total"), TEXT("Unknown Yet"));
+		JsonObject->SetNumberField(TEXT("static_mesh_total"), SMInstances.Num());
+		JsonObject->SetNumberField(TEXT("sm_instances_total"), NumSMInstances);
+		JsonObject->SetNumberField(TEXT("skm_actors_total"), NumSKMActors);
 
 		// output cameras
 		TArray<AActor*> Cameras;
@@ -1111,6 +1120,8 @@ void UTiXExporterBPLibrary::ExportAnimationAsset(UAnimationAsset* InAnimAsset, F
 
 	UAnimSequence* AnimSequence = Cast<UAnimSequence>(InAnimAsset);
 	const int32 NumFrames = AnimSequence->GetRawNumberOfFrames();
+	const float SequenceLength = AnimSequence->SequenceLength;
+	const float RateScale = AnimSequence->RateScale;
 	const TArray<FRawAnimSequenceTrack>& AnimData = AnimSequence->GetRawAnimationData();
 	const TArray<FTrackToSkeletonMap>& TrackToSkeMap = AnimSequence->GetRawTrackToSkeletonMapTable();
 
@@ -1123,6 +1134,8 @@ void UTiXExporterBPLibrary::ExportAnimationAsset(UAnimationAsset* InAnimAsset, F
 	AnimAsset.version = 1;
 	AnimAsset.desc = TEXT("Anim Sequence from TiX exporter.");
 	AnimAsset.total_frames = NumFrames;
+	AnimAsset.sequence_length = SequenceLength;
+	AnimAsset.rate_scale = RateScale;
 	AnimAsset.total_tracks = AnimData.Num();
 	AnimAsset.ref_skeleton = SkeletonPath;
 	AnimAsset.tracks.Reserve(AnimData.Num());
@@ -1908,7 +1921,7 @@ void UTiXExporterBPLibrary::ExportReflectionCapture(AReflectionCapture* RCActor,
 	}
 }
 
-TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances)
+TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportStaticMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances)
 {
 	FString MeshPathName = GetResourcePathName(InMesh);
 
@@ -1943,6 +1956,52 @@ TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportMeshInstances(const UStatic
 	return JsonObject;
 }
 
+TSharedPtr<FJsonObject> UTiXExporterBPLibrary::ExportSkeletalMeshActors(const USkeletalMesh* InMesh, const TArray<ASkeletalMeshActor*>& Actors)
+{
+	FString MeshPathName = GetResourcePathName(InMesh);
+	FString SkeletonPathName = GetResourcePathName(InMesh->Skeleton);
+
+	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
+
+	// output basic info
+	JsonObject->SetStringField(TEXT("linked_skm"), MeshPathName + ExtName);
+	JsonObject->SetStringField(TEXT("linked_sk"), SkeletonPathName + ExtName);
+
+	// only care about LOD 0 for now
+	int32 CurrentLOD = 0;
+	FSkeletalMeshLODRenderData& LODResource = InMesh->GetResourceForRendering()->LODRenderData[CurrentLOD];
+	JsonObject->SetNumberField(TEXT("mesh_sections"), LODResource.RenderSections.Num());
+
+	TArray< TSharedPtr<FJsonValue> > JSKMActors;
+	for (const auto& A : Actors)
+	{
+		TSharedPtr<FJsonObject> JActorInfo = MakeShareable(new FJsonObject);
+		// Actor animation
+		UAnimSingleNodeInstance* SingleNodeInstance = A->GetSkeletalMeshComponent()->GetSingleNodeInstance();
+		FString AnimPathName = GetResourcePathName(SingleNodeInstance->CurrentAsset);
+		JActorInfo->SetStringField(TEXT("linked_anim"), AnimPathName + ExtName);
+
+		// Actor transform
+		const FTransform& Trans = A->GetTransform();
+		FVector Position = Trans.GetTranslation() * TiXExporterSetting.MeshVertexPositionScale;
+		FQuat Rotation = Trans.GetRotation();
+		FVector Scale = Trans.GetScale3D();
+		TArray< TSharedPtr<FJsonValue> > JPosition, JRotation, JScale;
+		ConvertToJsonArray(Position, JPosition);
+		ConvertToJsonArray(Rotation, JRotation);
+		ConvertToJsonArray(Scale, JScale);
+		JActorInfo->SetArrayField(TEXT("position"), JPosition);
+		JActorInfo->SetArrayField(TEXT("rotation"), JRotation);
+		JActorInfo->SetArrayField(TEXT("scale"), JScale);
+
+		TSharedRef< FJsonValueObject > JsonActorInfo = MakeShareable(new FJsonValueObject(JActorInfo));
+		JSKMActors.Add(JsonActorInfo);
+	}
+	JsonObject->SetArrayField(TEXT("actors"), JSKMActors);
+
+	return JsonObject;
+}
+
 void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, const FString& WorldName, const FString& InExportPath)
 {
 	// Get dependencies
@@ -1951,6 +2010,17 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	{
 		const UStaticMesh * Mesh = MeshIns.Key;
 		GetStaticMeshDependency(Mesh, InExportPath, Dependency);
+	}
+	for (const auto& MeshActors : SceneTile.TileSKMActors)
+	{
+		const USkeletalMesh * Mesh = MeshActors.Key;
+		GetSkeletalMeshDependency(Mesh, InExportPath, Dependency);
+
+		const TArray<ASkeletalMeshActor*>& TileActors = MeshActors.Value;
+		for (const auto& A : TileActors)
+		{
+			GetAnimSequenceDependency(A, InExportPath, Dependency);
+		}
 	}
 
 	TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
@@ -1979,10 +2049,19 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 		TotalMeshSections += LODResource.Sections.Num();
 	}
 
-	JsonObject->SetNumberField(TEXT("meshes_total"), SceneTile.TileSMInstances.Num());
-	JsonObject->SetNumberField(TEXT("mesh_sections_total"), TotalMeshSections);
-	JsonObject->SetNumberField(TEXT("instances_total"), SceneTile.InstanceCount);
+	// static mesh and instances
+	JsonObject->SetNumberField(TEXT("static_mesh_total"), SceneTile.TileSMInstances.Num());
+	JsonObject->SetNumberField(TEXT("sm_sections_total"), TotalMeshSections);
+	JsonObject->SetNumberField(TEXT("sm_instances_total"), SceneTile.SMInstanceCount);
 	JsonObject->SetNumberField(TEXT("texture_total"), Dependency.DependenciesTextures.Num());
+
+	// skeletal mesh and anims
+	JsonObject->SetNumberField(TEXT("skeletal_meshes_total"), SceneTile.TileSKMActors.Num());
+	JsonObject->SetNumberField(TEXT("skeletons_total"), Dependency.DependenciesSkeletons.Num());
+	JsonObject->SetNumberField(TEXT("anims_total"), Dependency.DependenciesAnims.Num());
+	JsonObject->SetNumberField(TEXT("skm_actors_total"), SceneTile.SKMActorCount);
+
+	// reflection captures
 	JsonObject->SetNumberField(TEXT("reflection_captures_total"), SceneTile.ReflectionCaptures.Num());
 
 	// output reflection captures
@@ -2016,46 +2095,89 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 	// output dependencies
 	{
 		TSharedPtr<FJsonObject> JDependency = MakeShareable(new FJsonObject);
-		TArray< TSharedPtr<FJsonValue> > JTextures, JMaterialInstances, JMaterials, JMeshes;
+		TArray< TSharedPtr<FJsonValue> > JTextures, JMaterialInstances, JMaterials, JSMs, JSKMs;
+		TArray< TSharedPtr<FJsonValue> > JAnims, JSkeletons;
+		// textures
 		for (const auto& Tex : Dependency.DependenciesTextures)
 		{
 			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Tex + ExtName));
 			JTextures.Add(JsonValue);
 		}
 		JDependency->SetArrayField(TEXT("textures"), JTextures);
+		// Materials
 		for (const auto& Material : Dependency.DependenciesMaterials)
 		{
 			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Material + ExtName));
 			JMaterials.Add(JsonValue);
 		}
 		JDependency->SetArrayField(TEXT("materials"), JMaterials);
+		// Material instances
 		for (const auto& MaterialInstance : Dependency.DependenciesMaterialInstances)
 		{
 			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(MaterialInstance + ExtName));
 			JMaterialInstances.Add(JsonValue);
 		}
 		JDependency->SetArrayField(TEXT("material_instances"), JMaterialInstances);
-		for (const auto& Mesh : Dependency.DependenciesMeshes)
+
+		// anims
+		for (const auto& Anim : Dependency.DependenciesAnims)
+		{
+			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Anim + ExtName));
+			JAnims.Add(JsonValue);
+		}
+		JDependency->SetArrayField(TEXT("anims"), JAnims);
+		// skeletons
+		for (const auto& Sk : Dependency.DependenciesSkeletons)
+		{
+			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Sk + ExtName));
+			JSkeletons.Add(JsonValue);
+		}
+		JDependency->SetArrayField(TEXT("skeletons"), JSkeletons);
+
+		// static meshes
+		for (const auto& Mesh : Dependency.DependenciesStaticMeshes)
 		{
 			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Mesh + ExtName));
-			JMeshes.Add(JsonValue);
+			JSMs.Add(JsonValue);
 		}
-		JDependency->SetArrayField(TEXT("meshes"), JMeshes);
+		JDependency->SetArrayField(TEXT("static_meshes"), JSMs);
+		// skeletal meshes
+		for (const auto& Mesh : Dependency.DependenciesSkeletalMeshes)
+		{
+			TSharedRef< FJsonValueString > JsonValue = MakeShareable(new FJsonValueString(Mesh + ExtName));
+			JSKMs.Add(JsonValue);
+		}
+		JDependency->SetArrayField(TEXT("skeletal_meshes"), JSKMs);
+
 		JsonObject->SetObjectField(TEXT("dependency"), JDependency);
 	}
 
 	// Export mesh instances
 	{
-		TArray< TSharedPtr<FJsonValue> > JMeshInstances;
+		TArray< TSharedPtr<FJsonValue> > JSMInstances;
 		for (const auto& MeshIns : SceneTile.TileSMInstances)
 		{
 			const UStaticMesh * Mesh = MeshIns.Key;
 			const TArray< FTiXInstance>& Instances = MeshIns.Value;
-			TSharedPtr<FJsonObject> JIns = ExportMeshInstances(Mesh, Instances);
+			TSharedPtr<FJsonObject> JIns = ExportStaticMeshInstances(Mesh, Instances);
 			TSharedRef< FJsonValueObject > JsonValue = MakeShareable(new FJsonValueObject(JIns));
-			JMeshInstances.Add(JsonValue);
+			JSMInstances.Add(JsonValue);
 		}
-		JsonObject->SetArrayField(TEXT("instances"), JMeshInstances);
+		JsonObject->SetArrayField(TEXT("static_mesh_instances"), JSMInstances);
+	}
+
+	// Export skeletal mesh actors
+	{
+		TArray< TSharedPtr<FJsonValue> > JSKMActors;
+		for (const auto& MeshActor : SceneTile.TileSKMActors)
+		{
+			const USkeletalMesh* Mesh = MeshActor.Key;
+			const TArray<ASkeletalMeshActor*>& _Actors = MeshActor.Value;
+			TSharedPtr<FJsonObject> JActors = ExportSkeletalMeshActors(Mesh, _Actors);
+			TSharedRef< FJsonValueObject > JsonValue = MakeShareable(new FJsonValueObject(JActors));
+			JSKMActors.Add(JsonValue);
+		}
+		JsonObject->SetArrayField(TEXT("skeletal_mesh_actors"), JSKMActors);
 	}
 
 	FString FinalExportPath = InExportPath;
@@ -2070,7 +2192,7 @@ void UTiXExporterBPLibrary::ExportSceneTile(const FTiXSceneTile& SceneTile, cons
 void UTiXExporterBPLibrary::GetStaticMeshDependency(const UStaticMesh * StaticMesh, const FString& InExportPath, FDependency& Dependency)
 {
 	FString MeshPathName = CombineResourceExportPath(StaticMesh, InExportPath);
-	Dependency.DependenciesMeshes.AddUnique(MeshPathName);
+	Dependency.DependenciesStaticMeshes.AddUnique(MeshPathName);
 
 	if (TiXExporterSetting.bIgnoreMaterial)
 	{
@@ -2128,6 +2250,93 @@ void UTiXExporterBPLibrary::GetStaticMeshDependency(const UStaticMesh * StaticMe
 				}
 				Dependency.DependenciesTextures.AddUnique(TexturePathName);
 			}
+		}
+	}
+}
+
+void UTiXExporterBPLibrary::GetSkeletalMeshDependency(const USkeletalMesh* SkeletalMesh, const FString& InExportPath, FDependency& Dependency)
+{
+	FString MeshPathName = CombineResourceExportPath(SkeletalMesh, InExportPath);
+	Dependency.DependenciesSkeletalMeshes.AddUnique(MeshPathName);
+
+	// Skeleton and Anim dependencies
+	USkeleton* Skeleton = SkeletalMesh->Skeleton;
+	FString SkeletonPathName = CombineResourceExportPath(Skeleton, InExportPath);
+	Dependency.DependenciesSkeletons.AddUnique(SkeletonPathName);
+
+	// Material dependencies
+	if (!TiXExporterSetting.bIgnoreMaterial)
+	{
+		FSkeletalMeshRenderData* SKMRenderData = SkeletalMesh->GetResourceForRendering();
+
+		// Add material instance
+		const int32 CurrentLOD = 0;
+		FSkeletalMeshLODRenderData& LODResource = SKMRenderData->LODRenderData[CurrentLOD];
+		for (int32 Section = 0; Section < LODResource.RenderSections.Num(); ++Section)
+		{
+			FSkelMeshRenderSection& MeshSection = LODResource.RenderSections[Section];
+			FSkeletalMaterial SkeletalMaterial = SkeletalMesh->Materials[MeshSection.MaterialIndex];
+			UMaterialInterface* MaterialInterface = SkeletalMaterial.MaterialInterface;
+
+			if (MaterialInterface->IsA(UMaterial::StaticClass()))
+			{
+				// Materials
+				UMaterial* Material = Cast<UMaterial>(MaterialInterface);
+				FString MaterialPathName = CombineResourceExportPath(Material, InExportPath);
+				Dependency.DependenciesMaterials.AddUnique(MaterialPathName);
+			}
+			else
+			{
+				// Material instances
+				check(MaterialInterface->IsA(UMaterialInstance::StaticClass()));
+				UMaterialInstance* MaterialInstance = Cast<UMaterialInstance>(MaterialInterface);
+				FString MIPathName = CombineResourceExportPath(MaterialInstance, InExportPath);
+				Dependency.DependenciesMaterialInstances.AddUnique(MIPathName);
+
+				// Parent Materials
+				UMaterialInterface* ParentMaterial = MaterialInstance->Parent;
+				while (ParentMaterial && !ParentMaterial->IsA(UMaterial::StaticClass()))
+				{
+					check(ParentMaterial->IsA(UMaterialInstance::StaticClass()));
+					UMaterialInstance* ParentMaterialInstance = Cast<UMaterialInstance>(ParentMaterial);
+					ParentMaterial = ParentMaterialInstance->Parent;
+				}
+				check(ParentMaterial != nullptr);
+				UMaterial* Material = Cast<UMaterial>(ParentMaterial);
+				FString MaterialPathName = CombineResourceExportPath(Material, InExportPath);
+				Dependency.DependenciesMaterials.AddUnique(MaterialPathName);
+
+				// Add textures
+				for (int32 i = 0; i < MaterialInstance->TextureParameterValues.Num(); ++i)
+				{
+					const FTextureParameterValue& TextureValue = MaterialInstance->TextureParameterValues[i];
+
+					UTexture* Texture = TextureValue.ParameterValue;
+					FString TexturePathName = CombineResourceExportPath(Texture, InExportPath);
+					if (!Texture->IsA(UTexture2D::StaticClass()))
+					{
+						continue;
+					}
+					Dependency.DependenciesTextures.AddUnique(TexturePathName);
+				}
+			}
+		}
+	}
+}
+
+void UTiXExporterBPLibrary::GetAnimSequenceDependency(const ASkeletalMeshActor* SKMActor, const FString& InExportPath, FDependency& Dependency)
+{
+	USkeletalMesh* SkeletalMesh = SKMActor->GetSkeletalMeshComponent()->SkeletalMesh;
+
+	if (SKMActor->GetSkeletalMeshComponent()->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
+	{
+		// If Use Animation Asset, Export UAnimationAsset
+		UAnimSingleNodeInstance* SingleNodeInstance = SKMActor->GetSkeletalMeshComponent()->GetSingleNodeInstance();
+		UAnimationAsset* AnimAsset = SingleNodeInstance->CurrentAsset;
+		if (AnimAsset->IsA<UAnimSequence>())
+		{
+			FString AnimPathName = CombineResourceExportPath(AnimAsset, InExportPath);
+			Dependency.DependenciesAnims.AddUnique(AnimPathName);
 		}
 	}
 }

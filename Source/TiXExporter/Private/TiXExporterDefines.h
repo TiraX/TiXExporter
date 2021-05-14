@@ -84,27 +84,33 @@ struct FTiXInstance
 
 struct FDependency
 {
-	TArray<FString> DependenciesMeshes;
+	TArray<FString> DependenciesStaticMeshes;
+	TArray<FString> DependenciesSkeletalMeshes;
 	TArray<FString> DependenciesMaterialInstances;
 	TArray<FString> DependenciesMaterials;
 	TArray<FString> DependenciesTextures;
+	TArray<FString> DependenciesSkeletons;
+	TArray<FString> DependenciesAnims;
 };
 
 class AReflectionCapture;
+class ASkeletalMeshActor;
 struct FTiXSceneTile
 {
 	FIntPoint Position;
 	float TileSize;
-	int32 InstanceCount;
 	FBox BBox;
+	int32 SMInstanceCount;
+	int32 SKMActorCount;
 
 	TMap<UStaticMesh*, TArray<FTiXInstance> > TileSMInstances;
-	TMap<USkeletalMesh*, TArray<FTiXInstance> > TileSKMInstances;
+	TMap<USkeletalMesh*, TArray<ASkeletalMeshActor*> > TileSKMActors;
 	TArray< AReflectionCapture* > ReflectionCaptures;
 
 	FTiXSceneTile()
 		: TileSize(0.f)
-		, InstanceCount(0)
 		, BBox(ForceInit)
+		, SMInstanceCount(0)
+		, SKMActorCount(0)
 	{}
 };
