@@ -938,7 +938,7 @@ void UTiXExporterBPLibrary::ExportSkeletalMeshFromRenderData(USkeletalMesh* Skel
 
 		if (TiXExporterSetting.bIgnoreMaterial)
 		{
-			MaterialInstancePathName = TEXT("DebugMaterial");
+			MaterialInstancePathName = TEXT("DebugMaterialSkinMesh");
 			MaterialSlotName = TEXT("DebugMaterialName");
 		}
 		else
@@ -1082,7 +1082,7 @@ void UTiXExporterBPLibrary::ExportSkeleton(USkeleton* InSkeleton, const FString&
 		TiXBoneInfo.index = i;
 		TiXBoneInfo.bone_name = Info.Name.ToString();
 		TiXBoneInfo.parent_index = Info.ParentIndex;
-		FVector Translation = Trans.GetTranslation();
+		FVector Translation = Trans.GetTranslation() * TiXExporterSetting.MeshVertexPositionScale;
 		FQuat Rotation = Trans.GetRotation();
 		FVector Scale = Trans.GetScale3D();
 		TiXBoneInfo.translation.Add(Translation.X);
@@ -1155,9 +1155,9 @@ void UTiXExporterBPLibrary::ExportAnimationAsset(UAnimationAsset* InAnimAsset, F
 		TrackInfo.pos_keys.Reserve(AnimData[i].PosKeys.Num() * 3);
 		for (const auto& K : AnimData[i].PosKeys)
 		{
-			TrackInfo.pos_keys.Add(K.X);
-			TrackInfo.pos_keys.Add(K.Y);
-			TrackInfo.pos_keys.Add(K.Z);
+			TrackInfo.pos_keys.Add(K.X * TiXExporterSetting.MeshVertexPositionScale);
+			TrackInfo.pos_keys.Add(K.Y * TiXExporterSetting.MeshVertexPositionScale);
+			TrackInfo.pos_keys.Add(K.Z * TiXExporterSetting.MeshVertexPositionScale);
 		}
 		TrackInfo.rot_keys.Reserve(AnimData[i].RotKeys.Num() * 4);
 		for (const auto& K : AnimData[i].RotKeys)
