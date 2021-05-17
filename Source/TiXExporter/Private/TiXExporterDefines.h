@@ -59,6 +59,7 @@ struct FTiXMeshSection
 {
 	uint32 IndexStart;
 	uint32 NumTriangles;
+	TArray<int32> BoneMap;
 
 	/** Constructor. */
 	FTiXMeshSection()

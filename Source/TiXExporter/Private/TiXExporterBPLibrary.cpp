@@ -931,6 +931,10 @@ void UTiXExporterBPLibrary::ExportSkeletalMeshFromRenderData(USkeletalMesh* Skel
 		FTiXMeshSection TiXSection;
 		TiXSection.NumTriangles = MeshSection.NumTriangles;
 		TiXSection.IndexStart = FirstIndex;
+		for (int32 b = 0; b < MeshSection.BoneMap.Num(); b++)
+		{
+			TiXSection.BoneMap.Add(MeshSection.BoneMap[b]);
+		}
 		MeshSections.Add(TiXSection);
 
 		// Dump section name and material
@@ -1085,13 +1089,16 @@ void UTiXExporterBPLibrary::ExportSkeleton(USkeleton* InSkeleton, const FString&
 		FVector Translation = Trans.GetTranslation() * TiXExporterSetting.MeshVertexPositionScale;
 		FQuat Rotation = Trans.GetRotation();
 		FVector Scale = Trans.GetScale3D();
+		TiXBoneInfo.translation.Reserve(3);
 		TiXBoneInfo.translation.Add(Translation.X);
 		TiXBoneInfo.translation.Add(Translation.Y);
 		TiXBoneInfo.translation.Add(Translation.Z);
+		TiXBoneInfo.rotation.Reserve(4);
 		TiXBoneInfo.rotation.Add(Rotation.X);
 		TiXBoneInfo.rotation.Add(Rotation.Y);
 		TiXBoneInfo.rotation.Add(Rotation.Z);
 		TiXBoneInfo.rotation.Add(Rotation.W);
+		TiXBoneInfo.scale.Reserve(3);
 		TiXBoneInfo.scale.Add(Scale.X);
 		TiXBoneInfo.scale.Add(Scale.Y);
 		TiXBoneInfo.scale.Add(Scale.Z);

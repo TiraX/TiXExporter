@@ -397,5 +397,9 @@ TSharedPtr<FJsonObject> SaveMeshSectionToJson(const FTiXMeshSection& TiXSection,
 	JSection->SetNumberField(TEXT("index_start"), TiXSection.IndexStart);
 	JSection->SetNumberField(TEXT("triangles"), TiXSection.NumTriangles);
 
+	TArray< TSharedPtr<FJsonValue> > JBoneMap;
+	ConvertToJsonArray(TiXSection.BoneMap, JBoneMap);
+	JSection->SetArrayField(TEXT("bone_map"), JBoneMap);
+
 	return JSection;
 }
