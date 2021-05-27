@@ -161,6 +161,16 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Static Mesh", Keywords = "TiX Export Static Mesh"), Category = "TiXExporter")
 	static void ExportStaticMesh(UStaticMesh * StaticMesh, FString ExportPath, const TArray<FString>& Components);
 
+	/** Export skeleton.
+	*/
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Skeleton", Keywords = "TiX Export Skeleton"), Category = "TiXExporter")
+	static void ExportSkeleton(USkeleton* InSkeleton, const FString& Path);
+
+	/** Export skeleton.
+	*/
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Export Animation", Keywords = "TiX Export Animation Sequence Clip"), Category = "TiXExporter")
+	static void ExportAnimationAsset(UAnimationAsset* InAnimAsset, FString ExportPath);
+
 
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Set Tile Size", Keywords = "TiX Set Tile Size"), Category = "TiXExporter")
 	static void SetTileSize(float TileSize);
@@ -185,8 +195,6 @@ private:
 	static void ExportMaterial(UMaterialInterface* InMaterial, const FString& Path);
 	static void ExportTexture(UTexture* InTexture, const FString& Path, bool UsedAsIBL = false);
 	static void ExportReflectionCapture(AReflectionCapture* RCActor, const FString& Path);
-	static void ExportSkeleton(USkeleton* InSkeleton, const FString& Path);
-	static void ExportAnimationAsset(UAnimationAsset* InAnimAsset, FString ExportPath);
 
 	static TSharedPtr<FJsonObject> ExportStaticMeshInstances(const UStaticMesh * InMesh, const TArray<FTiXInstance>& Instances);
 	static TSharedPtr<FJsonObject> ExportSkeletalMeshActors(const USkeletalMesh* InMesh, const TArray<ASkeletalMeshActor*>& Actors);
